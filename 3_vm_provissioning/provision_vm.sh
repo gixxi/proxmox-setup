@@ -99,17 +99,29 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 # Note: importdisk creates a disk named 'vm-<VMID>-disk-<INDEX>' (e.g., vm-108-disk-0)
-IMPORTED_DISK_NAME="vm-${VM_ID}-disk-0"
-echo "INFO: Disk image imported as ${IMPORTED_DISK_NAME}."
+# The actual filename might include an extension like .raw or .qcow2 depending on storage/import options.
+# We'll assume .raw based on common import behavior and your example. Adjust if needed.
+IMPORTED_DISK_FILENAME="vm-${VM_ID}-disk-0.raw"
+echo "INFO: Disk image imported. Assuming filename ${IMPORTED_DISK_FILENAME} in VM directory."
 
 # 5. Attach the imported disk as the boot disk (scsi0 -> /dev/sda)
-echo "INFO: Attaching imported disk ${IMPORTED_DISK_NAME} as scsi0..."
-qm set $VM_ID --scsihw virtio-scsi-pci --scsi0 "${STORAGE}:${IMPORTED_DISK_NAME}"
+# Use the format that includes the VM ID subdirectory, matching your working example.
+DISK_PATH_FOR_SET="${STORAGE}:${VM_ID}/${IMPORTED_DISK_FILENAME}"
+echo "INFO: Attaching imported disk using path ${DISK_PATH_FOR_SET} as scsi0..."
+# Using -scsi0 syntax as per your example, though --scsi0 should also work.
+qm set $VM_ID --scsihw virtio-scsi-pci -scsi0 "${DISK_PATH_FOR_SET}"
 if [ $? -ne 0 ]; then
-    echo "ERROR: Failed to attach boot disk scsi0 for VM $VM_ID."
-    qm destroy $VM_ID --destroy-unreferenced-disks 1 --purge 1 # Clean up VM
-    # rm -f "${DOWNLOAD_PATH}"
-    exit 1
+    echo "ERROR: Failed to attach boot disk scsi0 for VM $VM_ID using path ${DISK_PATH_FOR_SET}."
+    # Attempting fallback without extension, just in case
+    DISK_PATH_FOR_SET_NOEXT="${STORAGE}:${VM_ID}/vm-${VM_ID}-disk-0"
+    echo "INFO: Retrying attachment without .raw extension: ${DISK_PATH_FOR_SET_NOEXT}"
+    qm set $VM_ID --scsihw virtio-scsi-pci -scsi0 "${DISK_PATH_FOR_SET_NOEXT}"
+    if [ $? -ne 0 ]; then
+        echo "ERROR: Fallback attachment also failed."
+        qm destroy $VM_ID --destroy-unreferenced-disks 1 --purge 1 # Clean up VM
+        # rm -f "${DOWNLOAD_PATH}"
+        exit 1
+    fi
 fi
 
 # 6. Set the boot order
