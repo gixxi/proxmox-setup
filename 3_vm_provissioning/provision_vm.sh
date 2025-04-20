@@ -31,13 +31,6 @@ if [ ! -f "${DOWNLOAD_PATH}" ]; then
   wget -O "${DOWNLOAD_PATH}" "${DEBIAN_IMAGE_URL}"
 fi
 
-# Check if image exists in proxmox_data storage
-if ! pvesm list proxmox_data | grep -q "${IMAGE_NAME}"; then
-  echo "Importing image to proxmox_data storage..."
-  # Upload the image to proxmox_data storage
-  pvesm upload "${STORAGE}" "${DOWNLOAD_PATH}" -content vztmpl
-fi
-
 # Create VM
 VM_ID=$(pvesh get /cluster/nextid)
 echo "Creating VM with ID $VM_ID"
@@ -45,7 +38,7 @@ qm create $VM_ID --name "customer-$CUSTOMER" --memory $MEMORY --cores $CPU --net
 
 # Import disk from the custom image in proxmox_data
 echo "Importing disk $IMAGE_NAME from the custom image in proxmox_data"
-qm importdisk $VM_ID "${STORAGE}:vztmpl/${IMAGE_NAME}" "${STORAGE}"
+qm importdisk $VM_ID "${DOWNLOAD_PATH}" "${STORAGE}"
 
 # Configure disk and boot
 qm set $VM_ID --scsihw virtio-scsi-pci --scsi0 proxmox_data:vm-$VM_ID-disk-0
