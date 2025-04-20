@@ -41,8 +41,18 @@ echo "Importing disk $IMAGE_NAME from the custom image in proxmox_data"
 qm importdisk $VM_ID "${DOWNLOAD_PATH}" "${STORAGE}"
 
 # Configure disk and boot
-qm set $VM_ID --scsihw virtio-scsi-pci --scsi0 proxmox_data:vm-$VM_ID-disk-0
+qm set $VM_ID --scsihw virtio-scsi-pci --scsi0 "${STORAGE}:vm-$VM_ID-disk-0"
 qm set $VM_ID --boot c --bootdisk scsi0
+
+# Resize the disk to the requested size
+echo "Resizing disk to ${DISK}GB"
+qm resize $VM_ID scsi0 ${DISK}G
+
+# Add additional data disk if needed
+if [ "$DISK" -gt 0 ]; then
+  echo "Adding data disk of ${DISK}GB"
+  qm set $VM_ID --scsi1 "${STORAGE}:${DISK}"
+fi
 
 # Set cloud-init
 qm set $VM_ID --citype nocloud
@@ -52,6 +62,7 @@ qm set $VM_ID --cipassword "initial-password"
 qm set $VM_ID --sshkeys /root/.ssh/id_rsa.pub
 
 # Create cloud-init customization script
+mkdir -p /var/lib/vz/snippets
 cat > /var/lib/vz/snippets/custom-$CUSTOMER.sh << 'EOF'
 #!/bin/bash
 apt-get update && apt-get upgrade -y
