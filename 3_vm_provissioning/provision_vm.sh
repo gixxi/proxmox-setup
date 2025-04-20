@@ -1,23 +1,23 @@
 #!/bin/bash
 # VM Provisioning Script for Proxmox
-# Usage: ./provision_vm.sh <customer_name> <ip_address> [memory in MB] [cpu] [disk in GB]
+# Usage: ./provision_vm.sh <customer_name> <ip_address> <ci_user> <ci_password> [memory in MB] [cpu] [disk in GB]
 # Memory defaults to 2048 MB (2 GB), CPU to 2 cores, System Disk (DISK) to 10 GB.
 # Creates only the primary system disk.
 
 # --- Configuration ---
 CUSTOMER=$1
 IP_ADDRESS=$2
-# Set default values if parameters are not provided
-MEMORY=${3:-2048}         # Default system memory to 2 GB
-CPU=${4:-2}               # Default CPU cores to 2
-DISK=${5:-10}             # Default system disk size to 10 GB
+CI_USER=$3               # Cloud-init user (Mandatory)
+CI_PASSWORD=$4           # Cloud-init password (Mandatory)
+# Set default values for optional parameters
+MEMORY=${5:-2048}         # Default system memory to 2 GB
+CPU=${6:-2}               # Default CPU cores to 2
+DISK=${7:-10}             # Default system disk size to 10 GB
 # DATA_DISK_SIZE=20       # Removed - No additional data disk
 STORAGE="proxmox_data"    # Proxmox storage ID
 BRIDGE="vmbr0"            # Proxmox network bridge
 GATEWAY="192.168.1.1"     # Network gateway
 SSH_PUB_KEY_PATH="/root/.ssh/id_rsa.pub" # Path to SSH public key for cloud-init
-CI_USER="admin"           # Cloud-init default user
-CI_PASSWORD="initial-password" # Cloud-init default password (change this!)
 TIMEZONE="Europe/Zurich"  # Timezone for the VM
 
 # Specific Debian image URL and name
@@ -26,9 +26,9 @@ IMAGE_NAME="debian-12-generic-amd64-20250416-2084.qcow2"
 DOWNLOAD_PATH="/tmp/${IMAGE_NAME}" # Local path to download the image
 
 # --- Parameter Validation ---
-if [ -z "$CUSTOMER" ] || [ -z "$IP_ADDRESS" ]; then
+if [ -z "$CUSTOMER" ] || [ -z "$IP_ADDRESS" ] || [ -z "$CI_USER" ] || [ -z "$CI_PASSWORD" ]; then
   echo "Error: Missing mandatory parameters"
-  echo "Usage: $0 <customer_name> <ip_address> [memory in MB] [cpu] [disk in GB]"
+  echo "Usage: $0 <customer_name> <ip_address> <ci_user> <ci_password> [memory in MB] [cpu] [disk in GB]"
   exit 1
 fi
 
@@ -219,7 +219,7 @@ echo " CPU Cores:    $CPU"
 echo " System Disk:  ${DISK}G (scsi0)"
 # echo " Data Disk:    ${DATA_DISK_SIZE}G (scsi1)" # Removed
 echo " SSH User:     $CI_USER (Password: $CI_PASSWORD)"
-echo " SSH Key Path: $SSH_PUB_KEY_PATH"
+echo " SSH PubKey:   $SSH_PUB_KEY_PATH"
 echo "=================================================="
 echo "INFO: Waiting a bit for VM to boot and apply cloud-init..."
 sleep 45 # Adjust as needed
