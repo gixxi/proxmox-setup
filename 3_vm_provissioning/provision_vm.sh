@@ -40,9 +40,11 @@ fi
 
 # Create VM
 VM_ID=$(pvesh get /cluster/nextid)
+echo "Creating VM with ID $VM_ID"
 qm create $VM_ID --name "customer-$CUSTOMER" --memory $MEMORY --cores $CPU --net0 virtio,bridge=vmbr0
 
 # Import disk from the custom image in proxmox_data
+echo "Importing disk $IMAGE_NAME from the custom image in proxmox_data"
 qm importdisk $VM_ID "${STORAGE}:vztmpl/${IMAGE_NAME}" "${STORAGE}"
 
 # Configure disk and boot
