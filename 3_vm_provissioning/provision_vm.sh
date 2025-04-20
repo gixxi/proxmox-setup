@@ -1,12 +1,21 @@
 #!/bin/bash
 # VM Provisioning Script for Proxmox
-# Usage: ./provision_vm.sh <customer_name> <ip_address> <memory in MB> <cpu> <disk in GB>
+# Usage: ./provision_vm.sh <customer_name> <ip_address> [memory in MB] [cpu] [disk in GB]
+# Memory defaults to 2048 MB (2 GB), CPU to 2 cores, DISK to 10 GB
+
+# Check for mandatory parameters
+if [ -z "$1" ] || [ -z "$2" ]; then
+  echo "Error: Missing mandatory parameters"
+  echo "Usage: ./provision_vm.sh <customer_name> <ip_address> [memory in MB] [cpu] [disk in GB]"
+  exit 1
+fi
 
 CUSTOMER=$1
 IP_ADDRESS=$2
-MEMORY=$3
-CPU=$4
-DISK=$5
+# Set default values if parameters are not provided
+MEMORY=${3:-2048}  # Default to 2 GB
+CPU=${4:-2}        # Default to 2 cores
+DISK=${5:-10}      # Default to 10 GB
 TEMPLATE="debian-12-custom"
 STORAGE="proxmox_data"
 VM_NAME="customer-$CUSTOMER"
@@ -31,7 +40,7 @@ fi
 
 # Create VM
 VM_ID=$(pvesh get /cluster/nextid)
-qm create $VM_ID --name "customer-$CUSTOMER" --memory 4096 --cores 2 --net0 virtio,bridge=vmbr0
+qm create $VM_ID --name "customer-$CUSTOMER" --memory $MEMORY --cores $CPU --net0 virtio,bridge=vmbr0
 
 # Import disk from the custom image in proxmox_data
 qm importdisk $VM_ID "${STORAGE}:vztmpl/${IMAGE_NAME}" "${STORAGE}"
