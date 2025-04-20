@@ -1,139 +1,233 @@
 #!/bin/bash
 # VM Provisioning Script for Proxmox
 # Usage: ./provision_vm.sh <customer_name> <ip_address> [memory in MB] [cpu] [disk in GB]
-# Memory defaults to 2048 MB (2 GB), CPU to 2 cores, DISK to 10 GB
+# Memory defaults to 2048 MB (2 GB), CPU to 2 cores, System Disk (DISK) to 10 GB.
+# Creates only the primary system disk.
 
-# Check for mandatory parameters
-if [ -z "$1" ] || [ -z "$2" ]; then
-  echo "Error: Missing mandatory parameters"
-  echo "Usage: ./provision_vm.sh <customer_name> <ip_address> [memory in MB] [cpu] [disk in GB]"
-  exit 1
-fi
-
+# --- Configuration ---
 CUSTOMER=$1
 IP_ADDRESS=$2
 # Set default values if parameters are not provided
-MEMORY=${3:-2048}  # Default to 2 GB
-CPU=${4:-2}        # Default to 2 cores
-DISK=${5:-10}      # Default to 10 GB
-DATA_DISK_SIZE=20  # Size of additional data disk in GB
-TEMPLATE="debian-12-custom"
-STORAGE="proxmox_data"
-VM_NAME="customer-$CUSTOMER"
+MEMORY=${3:-2048}         # Default system memory to 2 GB
+CPU=${4:-2}               # Default CPU cores to 2
+DISK=${5:-10}             # Default system disk size to 10 GB
+# DATA_DISK_SIZE=20       # Removed - No additional data disk
+STORAGE="proxmox_data"    # Proxmox storage ID
+BRIDGE="vmbr0"            # Proxmox network bridge
+GATEWAY="192.168.1.1"     # Network gateway
+SSH_PUB_KEY_PATH="/root/.ssh/id_rsa.pub" # Path to SSH public key for cloud-init
+CI_USER="admin"           # Cloud-init default user
+CI_PASSWORD="initial-password" # Cloud-init default password (change this!)
+TIMEZONE="Europe/Zurich"  # Timezone for the VM
 
-# Create VM
-VM_ID=$(pvesh get /cluster/nextid)
-echo "Creating VM with ID $VM_ID"
-
-# Stop the VM if it is already running (this will only be relevant for updates to existing VMs)
-if qm status $VM_ID 2>/dev/null | grep -q "running"; then
-  echo "Stopping VM $VM_ID"
-  qm stop $VM_ID
-fi
-
-# Specific Debian image URL
+# Specific Debian image URL and name
 DEBIAN_IMAGE_URL="https://cloud.debian.org/images/cloud/bookworm/20250416-2084/debian-12-generic-amd64-20250416-2084.qcow2"
 IMAGE_NAME="debian-12-generic-amd64-20250416-2084.qcow2"
-DOWNLOAD_PATH="/tmp/${IMAGE_NAME}"
+DOWNLOAD_PATH="/tmp/${IMAGE_NAME}" # Local path to download the image
 
-# Download the specific Debian cloud image if not already present
+# --- Parameter Validation ---
+if [ -z "$CUSTOMER" ] || [ -z "$IP_ADDRESS" ]; then
+  echo "Error: Missing mandatory parameters"
+  echo "Usage: $0 <customer_name> <ip_address> [memory in MB] [cpu] [disk in GB]"
+  exit 1
+fi
+
+if ! [[ "$IP_ADDRESS" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "Error: Invalid IP address format: $IP_ADDRESS"
+  exit 1
+fi
+
+if [ ! -f "$SSH_PUB_KEY_PATH" ]; then
+    echo "Error: SSH public key not found at $SSH_PUB_KEY_PATH"
+    exit 1
+fi
+
+VM_NAME="customer-$CUSTOMER"
+SNIPPET_DIR="/var/lib/vz/snippets"
+CUSTOM_SCRIPT_NAME="custom-$CUSTOMER.sh"
+CUSTOM_SCRIPT_PATH="$SNIPPET_DIR/$CUSTOM_SCRIPT_NAME"
+
+# --- Main Script ---
+
+# 1. Get Next Available VM ID
+echo "INFO: Getting next available VM ID..."
+VM_ID=$(pvesh get /cluster/nextid)
+if [ -z "$VM_ID" ]; then
+    echo "ERROR: Could not get next VM ID from Proxmox."
+    exit 1
+fi
+echo "INFO: Next available VM ID is $VM_ID."
+
+# Check if VM already exists (optional, uncomment to prevent overwriting)
+# if qm status $VM_ID > /dev/null 2>&1; then
+#     echo "ERROR: VM ID $VM_ID already exists. Please choose a different ID or delete the existing VM."
+#     exit 1
+# fi
+
+# 2. Download Debian Cloud Image if necessary
+echo "INFO: Checking for Debian cloud image..."
 if [ ! -f "${DOWNLOAD_PATH}" ]; then
-  echo "Downloading Debian cloud image..."
-  wget -O "${DOWNLOAD_PATH}" "${DEBIAN_IMAGE_URL}"
-fi
-
-# Create VM
-qm create $VM_ID --name "customer-$CUSTOMER" --memory $MEMORY --cores $CPU --net0 virtio,bridge=vmbr0
-
-# Import disk from the custom image
-echo "Importing disk $IMAGE_NAME from the custom image"
-qm importdisk $VM_ID "${DOWNLOAD_PATH}" "${STORAGE}"
-
-# Configure disk and boot
-# scsi0 will be mapped to /dev/sda inside the VM
-qm set $VM_ID --scsihw virtio-scsi-pci --scsi0 "${STORAGE}:vm-$VM_ID-disk-0"
-qm set $VM_ID --boot c --bootdisk scsi0
-
-# Resize the system disk to the requested size
-echo "Resizing system disk to ${DISK}GB"
-qm resize $VM_ID scsi0 ${DISK}G
-
-# Create and add an additional data disk
-# scsi1 will be mapped to /dev/sdb inside the VM
-echo "Creating additional data disk of ${DATA_DISK_SIZE}GB"
-qm disk create $VM_ID --disk scsi1 --storage "${STORAGE}" --size ${DATA_DISK_SIZE}G
-
-# Ensure the secondary disk is attached properly
-echo "Ensuring secondary disk is properly attached"
-# Display disk configuration for debugging
-qm config $VM_ID | grep -E "scsi[0-9]+"
-
-# Set cloud-init
-qm set $VM_ID --citype nocloud
-qm set $VM_ID --ipconfig0 "ip=$IP_ADDRESS/24,gw=192.168.1.1"
-qm set $VM_ID --ciuser admin
-qm set $VM_ID --cipassword "initial-password"
-qm set $VM_ID --sshkeys /root/.ssh/id_rsa.pub
-
-# Create cloud-init customization script with improved disk detection
-mkdir -p /var/lib/vz/snippets
-cat > /var/lib/vz/snippets/custom-$CUSTOMER.sh << 'EOF'
-#!/bin/bash
-apt-get update && apt-get upgrade -y
-apt-get install -y docker.io supervisor emacs vim nano curl wget
-systemctl enable --now docker
-echo 'AllowUsers root@192.168.1.0/24' >> /etc/ssh/sshd_config
-systemctl restart sshd
-timedatectl set-timezone Europe/Zurich
-
-# Setup additional data disk - look for all additional disks
-echo "Setting up additional data disks"
-# First check for standard device path
-if [ -e /dev/sdb ]; then
-  DATA_DISK="/dev/sdb"
-  echo "Found data disk at /dev/sdb"
-# If not found, try to detect from available disks
-elif [ -e /dev/vdb ]; then
-  DATA_DISK="/dev/vdb"
-  echo "Found data disk at /dev/vdb"
-else
-  # List all block devices for troubleshooting
-  echo "Available block devices:"
-  lsblk
-  # Try to find a disk that's not the boot disk
-  DATA_DISK=$(lsblk -dpno NAME | grep -v "$(findmnt -n -o SOURCE /)" | head -1)
-  if [ -n "$DATA_DISK" ]; then
-    echo "Using detected data disk: $DATA_DISK"
-  else
-    echo "No secondary disk found"
-    exit 0
+  echo "INFO: Downloading Debian cloud image to ${DOWNLOAD_PATH}..."
+  wget -q --show-progress -O "${DOWNLOAD_PATH}" "${DEBIAN_IMAGE_URL}"
+  if [ $? -ne 0 ]; then
+      echo "ERROR: Failed to download Debian image."
+      exit 1
   fi
+  echo "INFO: Download complete."
+else
+  echo "INFO: Debian cloud image already exists locally."
 fi
 
-# If we found a disk to use, format and mount it
-if [ -n "$DATA_DISK" ]; then
-  echo "Setting up data disk $DATA_DISK"
-  parted $DATA_DISK mklabel gpt
-  parted $DATA_DISK mkpart primary 0% 100%
-  PART="${DATA_DISK}1"
-  mkfs.ext4 $PART
-  mkdir -p /data
-  echo "$PART /data ext4 defaults 0 0" >> /etc/fstab
-  mount /data
-  chmod 777 /data
-  echo "Data disk setup complete"
+# 3. Create the VM
+echo "INFO: Creating VM $VM_ID (Name: $VM_NAME)..."
+qm create $VM_ID --name "$VM_NAME" --memory $MEMORY --cores $CPU --net0 virtio,bridge=$BRIDGE
+if [ $? -ne 0 ]; then
+    echo "ERROR: Failed to create VM $VM_ID."
+    # Optional: Clean up downloaded image if creation fails
+    # rm -f "${DOWNLOAD_PATH}"
+    exit 1
 fi
+echo "INFO: VM $VM_ID created."
+
+# 4. Import the downloaded disk image to the VM's storage
+echo "INFO: Importing disk image ${IMAGE_NAME} to storage '${STORAGE}' for VM $VM_ID..."
+qm importdisk $VM_ID "${DOWNLOAD_PATH}" "${STORAGE}"
+if [ $? -ne 0 ]; then
+    echo "ERROR: Failed to import disk for VM $VM_ID."
+    qm destroy $VM_ID --destroy-unreferenced-disks 1 --purge 1 # Clean up VM
+    # rm -f "${DOWNLOAD_PATH}"
+    exit 1
+fi
+# Note: importdisk creates a disk named 'vm-<VMID>-disk-<INDEX>' (e.g., vm-108-disk-0)
+IMPORTED_DISK_NAME="vm-${VM_ID}-disk-0"
+echo "INFO: Disk image imported as ${IMPORTED_DISK_NAME}."
+
+# 5. Attach the imported disk as the boot disk (scsi0 -> /dev/sda)
+echo "INFO: Attaching imported disk ${IMPORTED_DISK_NAME} as scsi0..."
+qm set $VM_ID --scsihw virtio-scsi-pci --scsi0 "${STORAGE}:${IMPORTED_DISK_NAME}"
+if [ $? -ne 0 ]; then
+    echo "ERROR: Failed to attach boot disk scsi0 for VM $VM_ID."
+    qm destroy $VM_ID --destroy-unreferenced-disks 1 --purge 1 # Clean up VM
+    # rm -f "${DOWNLOAD_PATH}"
+    exit 1
+fi
+
+# 6. Set the boot order
+echo "INFO: Setting boot disk to scsi0..."
+qm set $VM_ID --boot c --bootdisk scsi0
+if [ $? -ne 0 ]; then
+    echo "ERROR: Failed to set boot disk for VM $VM_ID."
+    qm destroy $VM_ID --destroy-unreferenced-disks 1 --purge 1 # Clean up VM
+    # rm -f "${DOWNLOAD_PATH}"
+    exit 1
+fi
+
+# 7. Resize the boot disk
+echo "INFO: Resizing system disk (scsi0) to ${DISK}G..."
+qm resize $VM_ID scsi0 ${DISK}G
+if [ $? -ne 0 ]; then
+    echo "ERROR: Failed to resize system disk scsi0 for VM $VM_ID."
+    # Note: VM and disk still exist, resizing failed but might be recoverable or ignorable
+fi
+
+# 8. Create and attach the additional data disk (scsi1 -> /dev/sdb) - REMOVED
+# echo "INFO: Creating and attaching additional data disk (scsi1) of ${DATA_DISK_SIZE}G..."
+# qm set $VM_ID --scsi1 ${STORAGE}:${DATA_DISK_SIZE},format=raw
+# if [ $? -ne 0 ]; then
+#     echo "ERROR: Failed to create/attach data disk scsi1 for VM $VM_ID."
+#     # Note: VM and boot disk still exist
+# fi
+
+# 9. Configure Cloud-Init
+echo "INFO: Configuring Cloud-Init..."
+qm set $VM_ID --citype nocloud
+qm set $VM_ID --ipconfig0 "ip=${IP_ADDRESS}/24,gw=${GATEWAY}"
+qm set $VM_ID --ciuser "${CI_USER}"
+qm set $VM_ID --cipassword "${CI_PASSWORD}"
+qm set $VM_ID --sshkeys "${SSH_PUB_KEY_PATH}"
+# Add serial console for easier debugging if needed
+qm set $VM_ID --serial0 socket --vga serial0
+
+# 10. Create Cloud-Init User Data Script
+echo "INFO: Creating Cloud-Init user data script at ${CUSTOM_SCRIPT_PATH}..."
+mkdir -p "$SNIPPET_DIR"
+cat > "${CUSTOM_SCRIPT_PATH}" << EOF
+#!/bin/bash
+# Cloud-Init User Data Script for ${VM_NAME} (VM ID: ${VM_ID})
+
+export DEBIAN_FRONTEND=noninteractive
+
+echo "--- Starting Cloud-Init User Data Script ---"
+
+# Basic System Setup
+echo "INFO: Updating package lists and upgrading packages..."
+apt-get update -y && apt-get upgrade -y
+if [ \$? -ne 0 ]; then echo "WARNING: apt update/upgrade failed."; fi
+
+echo "INFO: Installing base packages..."
+apt-get install -y docker.io supervisor emacs vim nano curl wget parted gdisk
+if [ \$? -ne 0 ]; then echo "WARNING: apt install failed."; fi
+
+echo "INFO: Enabling and starting Docker service..."
+systemctl enable --now docker
+if [ \$? -ne 0 ]; then echo "WARNING: Failed to enable/start docker."; fi
+
+# SSH Configuration (Example: Allow root login from specific subnet)
+# echo "INFO: Configuring SSH..."
+# echo 'AllowUsers root@192.168.1.0/24 ${CI_USER}@*' >> /etc/ssh/sshd_config.d/99-custom.conf
+# systemctl restart sshd
+
+# Timezone
+echo "INFO: Setting timezone to ${TIMEZONE}..."
+timedatectl set-timezone ${TIMEZONE}
+
+# Setup additional data disk (scsi1 -> /dev/sdb or similar) - REMOVED
+# echo "INFO: Setting up additional data disk..."
+# ... (all the disk detection, formatting, mounting logic removed) ...
+
+echo "--- Cloud-Init User Data Script Finished ---"
 EOF
 
-qm set $VM_ID --cicustom "user=local:snippets/custom-$CUSTOMER.sh"
+# 11. Attach the Cloud-Init Script to the VM
+echo "INFO: Attaching Cloud-Init script ${CUSTOM_SCRIPT_NAME} to VM $VM_ID..."
+# Use 'local' storage ID for snippets
+qm set $VM_ID --cicustom "user=local:snippets/${CUSTOM_SCRIPT_NAME}"
+if [ $? -ne 0 ]; then
+    echo "ERROR: Failed to attach cloud-init script for VM $VM_ID."
+    # Consider cleanup
+    exit 1
+fi
 
-# Start VM
+# 12. Start the VM
+echo "INFO: Starting VM $VM_ID..."
 qm start $VM_ID
+if [ $? -ne 0 ]; then
+    echo "ERROR: Failed to start VM $VM_ID."
+    exit 1
+fi
 
-echo "VM customer-$CUSTOMER created with ID $VM_ID and IP $IP_ADDRESS"
-echo "Waiting for VM to boot and apply cloud-init configuration..."
-sleep 30
-echo "VM should be configuring the additional disk now"
+# --- Completion ---
+echo "=================================================="
+echo " VM PROVISIONING COMPLETE"
+echo "=================================================="
+echo " VM ID:        $VM_ID"
+echo " Name:         $VM_NAME"
+echo " Customer:     $CUSTOMER"
+echo " IP Address:   $IP_ADDRESS"
+echo " Memory:       $MEMORY MB"
+echo " CPU Cores:    $CPU"
+echo " System Disk:  ${DISK}G (scsi0)"
+# echo " Data Disk:    ${DATA_DISK_SIZE}G (scsi1)" # Removed
+echo " SSH User:     $CI_USER (Password: $CI_PASSWORD)"
+echo " SSH Key Path: $SSH_PUB_KEY_PATH"
+echo "=================================================="
+echo "INFO: Waiting a bit for VM to boot and apply cloud-init..."
+sleep 45 # Adjust as needed
+echo "INFO: VM should now be accessible at ssh ${CI_USER}@${IP_ADDRESS}"
+echo "INFO: Check cloud-init logs in /var/log/cloud-init-output.log inside the VM for details."
 
-# Optional: Clean up the download if desired
-# rm -f "${DOWNLOAD_PATH}" 
+# Optional: Clean up the downloaded image if desired
+# echo "INFO: Cleaning up downloaded image ${DOWNLOAD_PATH}..."
+# rm -f "${DOWNLOAD_PATH}"
+
+exit 0 
