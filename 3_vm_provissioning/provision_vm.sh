@@ -219,6 +219,9 @@ timedatectl set-timezone ${TIMEZONE}
 # ... (all the disk detection, formatting, mounting logic removed) ...
 
 echo "--- Cloud-Init User Data Script Finished ---"
+
+cat /etc/ssh/sshd_config
+
 EOF
 
 # 12. Attach the Cloud-Init Script to the VM
