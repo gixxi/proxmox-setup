@@ -189,8 +189,12 @@ apt-get update -y && apt-get upgrade -y
 if [ \$? -ne 0 ]; then echo "WARNING: apt update/upgrade failed."; fi
 
 echo "INFO: Installing base packages..."
-apt-get install -y docker.io supervisor emacs vim nano curl wget parted gdisk
+apt-get install -y docker.io supervisor emacs vim nano curl wget parted gdisk qemu-guest-agent
 if [ \$? -ne 0 ]; then echo "WARNING: apt install failed."; fi
+
+echo "INFO: Enabling and starting QEMU Guest Agent service..."
+systemctl enable --now qemu-guest-agent
+if [ \$? -ne 0 ]; then echo "WARNING: Failed to enable/start qemu-guest-agent."; fi
 
 echo "INFO: Enabling and starting Docker service..."
 systemctl enable --now docker
