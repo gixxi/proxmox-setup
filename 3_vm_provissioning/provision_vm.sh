@@ -184,10 +184,19 @@ echo "INFO: Enabling and starting Docker service..."
 systemctl enable --now docker
 if [ \$? -ne 0 ]; then echo "WARNING: Failed to enable/start docker."; fi
 
-# SSH Configuration (Example: Allow root login from specific subnet)
-# echo "INFO: Configuring SSH..."
-# echo 'AllowUsers root@192.168.1.0/24 ${CI_USER}@*' >> /etc/ssh/sshd_config.d/99-custom.conf
-# systemctl restart sshd
+# Configure SSH settings
+echo "INFO: Configuring SSH authentication settings..."
+sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
+sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+sed -i 's/#PubkeyAuthentication yes/PubkeyAuthentication yes/' /etc/ssh/sshd_config
+# Configure SSH to only allow connections from 192.168.1.0/24
+echo "INFO: Restricting SSH access to 192.168.1.0/24..."
+echo "sshd: 192.168.1.0/24" > /etc/hosts.allow
+echo "sshd: ALL" > /etc/hosts.deny
+
+# Restart SSH service to apply changes
+systemctl restart sshd
+if [ $? -ne 0 ]; then echo "WARNING: Failed to restart sshd service"; fi
 
 # Timezone
 echo "INFO: Setting timezone to ${TIMEZONE}..."
