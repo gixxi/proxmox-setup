@@ -150,7 +150,31 @@ fi
 #     # Note: VM and boot disk still exist
 # fi
 
-# 9. Configure Cloud-Init
+# 9. Create and attach the cloud-init drive
+echo "INFO: Creating and attaching cloud-init drive..."
+qm set $VM_ID --ide2 ${STORAGE}:cloudinit
+if [ $? -ne 0 ]; then
+    echo "ERROR: Failed to attach cloud-init drive for VM $VM_ID."
+    echo "INFO: Trying alternative storage location..."
+    qm set $VM_ID --ide2 local:cloudinit
+    if [ $? -ne 0 ]; then
+        echo "ERROR: Failed to attach cloud-init drive using alternative storage."
+        # Try one more time with local-lvm
+        qm set $VM_ID --ide2 local-lvm:cloudinit
+        if [ $? -ne 0 ]; then
+            echo "ERROR: All attempts to attach cloud-init drive failed."
+            # Continue anyway, as we'll try to configure cloud-init
+        else
+            echo "INFO: Successfully attached cloud-init drive using local-lvm."
+        fi
+    else
+        echo "INFO: Successfully attached cloud-init drive using local storage."
+    fi
+else
+    echo "INFO: Successfully attached cloud-init drive."
+fi
+
+# 10. Configure Cloud-Init
 echo "INFO: Configuring Cloud-Init..."
 qm set $VM_ID --citype nocloud
 qm set $VM_ID --ipconfig0 "ip=${IP_ADDRESS}/24,gw=${GATEWAY}"
@@ -160,7 +184,7 @@ qm set $VM_ID --sshkeys "${SSH_PUB_KEY_PATH}"
 # Add serial console for easier debugging if needed
 qm set $VM_ID --serial0 socket --vga serial0
 
-# 10. Create Cloud-Init User Data Script
+# 11. Create Cloud-Init User Data Script
 echo "INFO: Creating Cloud-Init user data script at ${CUSTOM_SCRIPT_PATH}..."
 mkdir -p "$SNIPPET_DIR"
 cat > "${CUSTOM_SCRIPT_PATH}" << EOF
@@ -209,7 +233,7 @@ timedatectl set-timezone ${TIMEZONE}
 echo "--- Cloud-Init User Data Script Finished ---"
 EOF
 
-# 11. Attach the Cloud-Init Script to the VM
+# 12. Attach the Cloud-Init Script to the VM
 echo "INFO: Attaching Cloud-Init script ${CUSTOM_SCRIPT_NAME} to VM $VM_ID..."
 # Use 'local' storage ID for snippets
 qm set $VM_ID --cicustom "user=local:snippets/${CUSTOM_SCRIPT_NAME}"
@@ -219,7 +243,7 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# 12. Start the VM
+# 13. Start the VM
 echo "INFO: Starting VM $VM_ID..."
 qm start $VM_ID
 if [ $? -ne 0 ]; then
