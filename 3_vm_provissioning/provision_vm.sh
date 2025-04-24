@@ -183,18 +183,18 @@ export DEBIAN_FRONTEND=noninteractive
 
 echo "--- Starting Cloud-Init User Data Script ---"
 
+# Force set root password directly
+echo 'root:${CI_PASSWORD}' | chpasswd
+echo "INFO: Root password has been explicitly set to the provided cloud-init password"
+
 # Basic System Setup
 echo "INFO: Updating package lists and upgrading packages..."
 apt-get update -y && apt-get upgrade -y
 if [ \$? -ne 0 ]; then echo "WARNING: apt update/upgrade failed."; fi
 
 echo "INFO: Installing base packages..."
-apt-get install -y docker.io supervisor emacs vim nano curl wget parted gdisk qemu-guest-agent
+apt-get install -y docker.io supervisor emacs vim nano curl wget parted gdisk
 if [ \$? -ne 0 ]; then echo "WARNING: apt install failed."; fi
-
-echo "INFO: Enabling and starting QEMU Guest Agent service..."
-systemctl enable --now qemu-guest-agent
-if [ \$? -ne 0 ]; then echo "WARNING: Failed to enable/start qemu-guest-agent."; fi
 
 echo "INFO: Enabling and starting Docker service..."
 systemctl enable --now docker
@@ -212,7 +212,7 @@ echo "sshd: ALL" > /etc/hosts.deny
 
 # Restart SSH service to apply changes
 systemctl restart sshd
-if [ $? -ne 0 ]; then echo "WARNING: Failed to restart sshd service"; fi
+if [ \$? -ne 0 ]; then echo "WARNING: Failed to restart sshd service"; fi
 
 # Timezone
 echo "INFO: Setting timezone to ${TIMEZONE}..."
