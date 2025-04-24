@@ -155,21 +155,9 @@ echo "INFO: Creating and attaching cloud-init drive..."
 qm set $VM_ID --ide2 ${STORAGE}:cloudinit
 if [ $? -ne 0 ]; then
     echo "ERROR: Failed to attach cloud-init drive for VM $VM_ID."
-    echo "INFO: Trying alternative storage location..."
-    qm set $VM_ID --ide2 local:cloudinit
-    if [ $? -ne 0 ]; then
-        echo "ERROR: Failed to attach cloud-init drive using alternative storage."
-        # Try one more time with local-lvm
-        qm set $VM_ID --ide2 local-lvm:cloudinit
-        if [ $? -ne 0 ]; then
-            echo "ERROR: All attempts to attach cloud-init drive failed."
-            # Continue anyway, as we'll try to configure cloud-init
-        else
-            echo "INFO: Successfully attached cloud-init drive using local-lvm."
-        fi
-    else
-        echo "INFO: Successfully attached cloud-init drive using local storage."
-    fi
+    qm destroy $VM_ID --destroy-unreferenced-disks 1 --purge 1 # Clean up VM
+    # rm -f "${DOWNLOAD_PATH}"
+    exit 1
 else
     echo "INFO: Successfully attached cloud-init drive."
 fi
