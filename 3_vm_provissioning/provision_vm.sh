@@ -187,6 +187,30 @@ echo "--- Starting Cloud-Init User Data Script ---"
 echo 'root:${CI_PASSWORD}' | chpasswd
 echo "INFO: Root password has been explicitly set to the provided cloud-init password"
 
+# Ensure SSH directory exists with proper permissions
+mkdir -p /root/.ssh
+chmod 700 /root/.ssh
+
+# Add SSH public key to authorized_keys if provided
+if [ -f "/var/lib/cloud/instance/user-data.txt" ]; then
+  echo "INFO: Extracting SSH key from cloud-init data..."
+  grep "ssh-rsa\\|ssh-ed25519\\|ssh-dss\\|ecdsa-sha2" /var/lib/cloud/instance/user-data.txt > /root/.ssh/authorized_keys
+  chmod 600 /root/.ssh/authorized_keys
+  echo "INFO: SSH key added to authorized_keys"
+fi
+
+# Also try to get the key from the expected cloud-init location
+if [ -f "/var/lib/cloud/instance/obj.pkl" ]; then
+  echo "INFO: Cloud-init data found, ensuring SSH keys are properly set up"
+fi
+
+# Manually add the SSH key (as a fallback)
+cat >> /root/.ssh/authorized_keys << 'SSHKEY'
+$(cat ${SSH_PUB_KEY_PATH})
+SSHKEY
+chmod 600 /root/.ssh/authorized_keys
+echo "INFO: SSH key manually added to authorized_keys"
+
 # Basic System Setup
 echo "INFO: Updating package lists and upgrading packages..."
 apt-get update -y && apt-get upgrade -y
