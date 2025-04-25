@@ -188,38 +188,13 @@ echo 'root:${CI_PASSWORD}' | chpasswd
 echo "INFO: Root password has been explicitly set to the provided cloud-init password"
 
 # Ensure SSH directory exists with proper permissions
-mkdir -p /root/.ssh
+mkdir -p /root/.ssh 
 chmod 700 /root/.ssh
 
-# Add SSH public key to authorized_keys if provided
-SSH_KEY_ADDED=0
-if [ -f "/var/lib/cloud/instance/user-data.txt" ]; then
-  echo "INFO: Extracting SSH key from cloud-init data..."
-  if [ ! -f "/root/.ssh/authorized_keys" ] || ! grep -q "ssh-rsa\\|ssh-ed25519\\|ssh-dss\\|ecdsa-sha2" /root/.ssh/authorized_keys; then
-    grep "ssh-rsa\\|ssh-ed25519\\|ssh-dss\\|ecdsa-sha2" /var/lib/cloud/instance/user-data.txt > /root/.ssh/authorized_keys
-    chmod 600 /root/.ssh/authorized_keys
-    echo "INFO: SSH key added to authorized_keys"
-    SSH_KEY_ADDED=1
-  else
-    echo "INFO: SSH key already exists in authorized_keys, skipping"
-  fi
-fi
-
-# Only add the SSH key manually if it wasn't added from cloud-init data
-if [ \$SSH_KEY_ADDED -eq 0 ]; then
-  # Extract the key part to check if it already exists
-  SSH_KEY="$(cat ${SSH_PUB_KEY_PATH})"
-  KEY_FINGERPRINT=\$(echo "\$SSH_KEY" | awk '{print \$2}' | cut -c1-20)
-  
-  if [ ! -f "/root/.ssh/authorized_keys" ] || ! grep -q "\$KEY_FINGERPRINT" /root/.ssh/authorized_keys; then
-    echo "INFO: Adding SSH key manually as fallback..."
-    echo "\$SSH_KEY" >> /root/.ssh/authorized_keys
-    chmod 600 /root/.ssh/authorized_keys
-    echo "INFO: SSH key manually added to authorized_keys"
-  else
-    echo "INFO: SSH key already exists in authorized_keys, skipping manual addition"
-  fi
-fi
+# Simply create the authorized_keys file with the SSH key
+echo "$(cat ${SSH_PUB_KEY_PATH})" > /root/.ssh/authorized_keys
+chmod 600 /root/.ssh/authorized_keys
+echo "INFO: SSH key added to authorized_keys"
 
 # Basic System Setup
 echo "INFO: Updating package lists and upgrading packages..."
