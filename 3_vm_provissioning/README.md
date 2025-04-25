@@ -34,5 +34,11 @@ The script handles error conditions at each step and provides appropriate feedba
 
 on a remote proxmox node you need to do the following assuming you have ssh access to the proxmox node.
 
-> cat provision_vm.sh | ssh <proxmox_user@proxmox_host> | 'bash -s -- <customer_name> <ip_address> <memory in MB> <cpu> <disk in GB>'
+> cat provision_vm.sh | ssh <proxmox_user@proxmox_host> | 'bash -s -- <customer_name> <ip_address> <root_user> <root_password> <memory in MB> <cpu> <disk in GB>'
+
+The parameters are optional:
+
+- <memory in MB> defaults to 2048
+- <cpu> defaults to 1
+- <disk in GB> defaults to 10
 
