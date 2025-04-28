@@ -1,0 +1,1 @@
+- create a cron on the proxmox host that copies the SSL certificate to the bastian vm
