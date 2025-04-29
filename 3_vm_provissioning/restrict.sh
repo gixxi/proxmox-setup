@@ -3,6 +3,8 @@
 # Check if the correct number of arguments are provided
 if [ $# -ne 2 ]; then
     echo "Usage: $0 <ip_address> <app or bastian>"
+    exit 1
+fi
 
 IP=$1
 TYPE=$2
