@@ -8,7 +8,7 @@ if [ -z "$username" ]; then
 fi
 
 # Create a non-root user
-adduser $username -h /home/$username
+adduser $username --home /home/$username --disabled-password --shell /bin/zsh
 mkdir /home/$username/.ssh
 chmod 700 /home/$username/.ssh
 touch /home/$username/.ssh/authorized_keys

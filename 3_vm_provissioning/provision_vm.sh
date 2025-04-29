@@ -202,7 +202,7 @@ apt-get update -y && apt-get upgrade -y
 if [ \$? -ne 0 ]; then echo "WARNING: apt update/upgrade failed."; fi
 
 echo "INFO: Installing base packages including nginx and ufw..."
-apt-get install -y docker.io supervisor emacs vim nano curl wget parted gdisk mosh nginx ufw
+apt-get install -y docker.io supervisor emacs vim nano curl wget parted gdisk mosh nginx ufw zsh
 if [ \$? -ne 0 ]; then echo "WARNING: apt install failed."; fi
 
 # --- Configure Nginx ---
