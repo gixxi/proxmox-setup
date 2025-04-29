@@ -42,7 +42,7 @@ if [ ! -f "$SSH_PUB_KEY_PATH" ]; then
     exit 1
 fi
 
-VM_NAME="VM_NAME-$VM_NAME"
+VM_NAME="$VM_NAME"
 SNIPPET_DIR="/var/lib/vz/snippets"
 CUSTOM_SCRIPT_NAME="custom-$VM_NAME.sh"
 CUSTOM_SCRIPT_PATH="$SNIPPET_DIR/$CUSTOM_SCRIPT_NAME"
@@ -407,7 +407,7 @@ echo " VM PROVISIONING COMPLETE"
 echo "=================================================="
 echo " VM ID:        $VM_ID"
 echo " Name:         $VM_NAME"
-echo " VM_NAME:     $VM_NAME"
+echo " VM_NAME:      $VM_NAME"
 echo " IP Address:   $IP_ADDRESS"
 echo " Memory:       $MEMORY MB"
 echo " CPU Cores:    $CPU"
