@@ -1,11 +1,11 @@
 #!/bin/bash
 # VM Provisioning Script for Proxmox
-# Usage: ./provision_vm.sh <customer_name> <ip_address> <ci_user> <ci_password> [memory in MB] [cpu] [disk in GB]
+# Usage: ./provision_vm.sh <vm_name> <ip_address> <ci_user> <ci_password> [memory in MB] [cpu] [disk in GB]
 # Memory defaults to 2048 MB (2 GB), CPU to 2 cores, System Disk (DISK) to 10 GB.
 # Creates only the primary system disk.
 
 # --- Configuration ---
-CUSTOMER=$1
+VM_NAME=$1
 IP_ADDRESS=$2
 CI_USER=$3               # Cloud-init user (Mandatory)
 CI_PASSWORD=$4           # Cloud-init password (Mandatory)
@@ -26,9 +26,9 @@ IMAGE_NAME="debian-12-generic-amd64-20250416-2084.qcow2"
 DOWNLOAD_PATH="/tmp/${IMAGE_NAME}" # Local path to download the image
 
 # --- Parameter Validation ---
-if [ -z "$CUSTOMER" ] || [ -z "$IP_ADDRESS" ] || [ -z "$CI_USER" ] || [ -z "$CI_PASSWORD" ]; then
+if [ -z "$VM_NAME" ] || [ -z "$IP_ADDRESS" ] || [ -z "$CI_USER" ] || [ -z "$CI_PASSWORD" ]; then
   echo "Error: Missing mandatory parameters"
-  echo "Usage: $0 <customer_name> <ip_address> <ci_user> <ci_password> [memory in MB] [cpu] [disk in GB]"
+  echo "Usage: $0 <VM_NAME_name> <ip_address> <ci_user> <ci_password> [memory in MB] [cpu] [disk in GB]"
   exit 1
 fi
 
@@ -38,13 +38,13 @@ if ! [[ "$IP_ADDRESS" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 fi
 
 if [ ! -f "$SSH_PUB_KEY_PATH" ]; then
-    echo "Error: SSH public key not found at $SSH_PUB_KEY_PATH"
+    echo "Error: SSH public key not found at $SSH_PUB_KEY_PATH"s
     exit 1
 fi
 
-VM_NAME="customer-$CUSTOMER"
+VM_NAME="VM_NAME-$VM_NAME"
 SNIPPET_DIR="/var/lib/vz/snippets"
-CUSTOM_SCRIPT_NAME="custom-$CUSTOMER.sh"
+CUSTOM_SCRIPT_NAME="custom-$VM_NAME.sh"
 CUSTOM_SCRIPT_PATH="$SNIPPET_DIR/$CUSTOM_SCRIPT_NAME"
 
 # --- Main Script ---
@@ -188,7 +188,7 @@ echo 'root:${CI_PASSWORD}' | chpasswd
 echo "INFO: Root password has been explicitly set to the provided cloud-init password"
 
 # Ensure SSH directory exists with proper permissions
-mkdir -p /root/.ssh 
+mkdir -p /root/.ssh
 chmod 700 /root/.ssh
 
 # Simply create the authorized_keys file with the SSH key
@@ -201,23 +201,19 @@ echo "INFO: Updating package lists and upgrading packages..."
 apt-get update -y && apt-get upgrade -y
 if [ \$? -ne 0 ]; then echo "WARNING: apt update/upgrade failed."; fi
 
-echo "INFO: Installing base packages..."
-apt-get install -y docker.io supervisor emacs vim nano curl wget parted gdisk
+echo "INFO: Installing base packages including nginx and ufw..."
+apt-get install -y docker.io supervisor emacs vim nano curl wget parted gdisk mosh nginx ufw
 if [ \$? -ne 0 ]; then echo "WARNING: apt install failed."; fi
 
 echo "INFO: Enabling and starting Docker service..."
 systemctl enable --now docker
 if [ \$? -ne 0 ]; then echo "WARNING: Failed to enable/start docker."; fi
 
-# Configure SSH settings
+# Configure SSH settings (Allowing root login and password auth - adjust if needed)
 echo "INFO: Configuring SSH authentication settings..."
 sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
 sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
 sed -i 's/#PubkeyAuthentication yes/PubkeyAuthentication yes/' /etc/ssh/sshd_config
-# Configure SSH to only allow connections from 192.168.1.0/24
-echo "INFO: Restricting SSH access to 192.168.1.0/24..."
-echo "sshd: 192.168.1.0/24" > /etc/hosts.allow
-echo "sshd: ALL" > /etc/hosts.deny
 
 # Restart SSH service to apply changes
 systemctl restart sshd
@@ -227,11 +223,54 @@ if [ \$? -ne 0 ]; then echo "WARNING: Failed to restart sshd service"; fi
 echo "INFO: Setting timezone to ${TIMEZONE}..."
 timedatectl set-timezone ${TIMEZONE}
 
+# --- Configure UFW (Uncomplicated Firewall) ---
+echo "INFO: Configuring UFW firewall rules..."
+
+# Allow SSH (port 22) from specific IPs
+echo "Allowing SSH from specific IPs..."
+ufw allow from 172.105.94.119 to any port 22 proto tcp
+ufw allow from 116.203.216.1 to any port 22 proto tcp
+ufw allow from 192.168.1.0/24 to any port 22 proto tcp # Keep local access if needed
+ufw allow from 5.161.184.133 to any port 22 proto tcp
+
+# Explicitly deny SSH from other sources (IPv4 and IPv6)
+echo "Denying SSH from other sources..."
+ufw deny 22/tcp comment 'Deny all other SSH access'
+
+# Allow HTTP (port 80)
+echo "Allowing HTTP (port 80)..."
+ufw allow 80/tcp
+
+# Allow HTTPS (port 443)
+echo "Allowing HTTPS (port 443)..."
+ufw allow 443/tcp
+
+# Allow custom TCP ports (8080, 8443)
+echo "Allowing custom TCP ports 8080 and 8443..."
+ufw allow 8080/tcp
+ufw allow 8443/tcp
+
+# Allow Mosh UDP ports (60000:61000)
+echo "Allowing Mosh UDP ports (60000:61000)..."
+ufw allow 60000:61000/udp
+
+# Enable UFW
+echo "Enabling UFW..."
+# Use --force to enable without interactive prompt
+ufw --force enable
+
+echo "INFO: UFW enabled."
+# --- End UFW Configuration ---
+
 # Setup additional data disk (scsi1 -> /dev/sdb or similar) - REMOVED
 # echo "INFO: Setting up additional data disk..."
 # ... (all the disk detection, formatting, mounting logic removed) ...
 
 echo "--- Cloud-Init User Data Script Finished ---"
+
+# Optional: Print final UFW status to cloud-init log
+echo "Final UFW status:"
+ufw status verbose
 
 cat /etc/ssh/sshd_config
 
@@ -261,7 +300,7 @@ echo " VM PROVISIONING COMPLETE"
 echo "=================================================="
 echo " VM ID:        $VM_ID"
 echo " Name:         $VM_NAME"
-echo " Customer:     $CUSTOMER"
+echo " VM_NAME:     $VM_NAME"
 echo " IP Address:   $IP_ADDRESS"
 echo " Memory:       $MEMORY MB"
 echo " CPU Cores:    $CPU"

@@ -42,3 +42,30 @@ The parameters are optional:
 - <cpu> defaults to 1
 - <disk in GB> defaults to 10
 
+## Restricting the surface as per the usage profile
+
+Depending on the usage of the profile we dissable certain services
+
+## Service Configuration Based on VM Role
+
+Depending on the intended role of the VM, certain services should be enabled or disabled:
+
+### Bastian/Gateway VM
+
+For VMs serving as bastian hosts or gateways, configure the following to disable the docker service:
+
+```bash
+systemctl disable docker
+```
+
+### Application Service VM
+
+When provisioning a VM intended to run application services to disable the nginx service:
+
+```bash
+systemctl disable nginx
+```
+
+
+
+
