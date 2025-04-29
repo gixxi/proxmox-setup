@@ -280,8 +280,10 @@ http {
     # Virtual Host Configs
     ##
     include /etc/nginx/conf.d/*.conf;
-    # Ensure the default sites-enabled directory is included for standard vhost setup
-    include /etc/nginx/sites-enabled/*;
+    # Include individual .conf files from sites-enabled
+    include /etc/nginx/sites-enabled/*.conf;
+    # Explicitly include the standard default site if it exists
+    include /etc/nginx/sites-enabled/default;
 }
 NGINX_EOF
 
