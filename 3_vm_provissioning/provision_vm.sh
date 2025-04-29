@@ -183,6 +183,11 @@ export DEBIAN_FRONTEND=noninteractive
 
 echo "--- Starting Cloud-Init User Data Script ---"
 
+# Set the hostname
+echo "INFO: Setting hostname to ${VM_NAME}..."
+hostnamectl set-hostname ${VM_NAME}
+if [ \$? -ne 0 ]; then echo "WARNING: Failed to set hostname."; fi
+
 # Force set root password directly
 echo 'root:${CI_PASSWORD}' | chpasswd
 echo "INFO: Root password has been explicitly set to the provided cloud-init password"

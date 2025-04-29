@@ -5,15 +5,36 @@
 In order to login to any Proxmox host using SSH the following requirements must be met:
 
 - The host must be reachable from the IP address of the client
-- The client IP address must be whitelisted in the Proxmox host firewall
+- The client IP address must be whitelisted in the Proxmox host hosts.allow file
 - The username must be whitelisted in the **sshd_config** file
 - The user must have a valid SSH key in the **authorized_keys** file
 - The user is a non-root user
 
-### Whitelisting the client IP address in the Proxmox host firewall
+### Whitelisting the client IP address in the Proxmox host hosts.allow file
 
 ```bash
+# Edit the hosts.allow file
+nano /etc/hosts.allow
 
+# Add the client IP address to the hosts.allow file
+sshd: 192.168.1.100
+sshd: 116.203.216.1
+sshd: 192.168.1.0/24
+sshd: 5.161.184.133
+
+# Save and exit
+```
+
+### Deny all other SSH access
+
+```bash
+# Edit the hosts.deny file
+nano /etc/hosts.deny
+
+# Add the following line to the hosts.deny file
+sshd:  all
+
+# Save and exit
 ```
 
 ### Create a non-root user
