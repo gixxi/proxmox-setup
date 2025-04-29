@@ -60,10 +60,13 @@ systemctl disable docker
 
 ### Application Service VM
 
-When provisioning a VM intended to run application services to disable the nginx service:
+When provisioning a VM intended to run application services to disable the nginx service as well as extending the firewall rules to allow machine-to-machine communication for TCP on ports 8080-8090 (used for the httpkit clojure server), 18080-18090 (used for clojure repl) and 28080-28090 (used for couchdb). The rules are inserted first to ensure that any **deny** rules are overridden:
 
 ```bash
 systemctl disable nginx
+ufw allow 8080:8090/tcp
+ufw allow 18080:18090/tcp
+ufw allow 28080:28090/tcp
 ```
 
 
