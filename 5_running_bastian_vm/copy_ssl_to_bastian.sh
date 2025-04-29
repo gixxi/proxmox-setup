@@ -44,26 +44,30 @@ ssh $BASTIAN_USER@$BASTIAN_IP "chmod 600 $REMOTE_CERT_PATH $REMOTE_KEY_PATH && c
 
 # Configure NGINX on bastian VM (Optional - only if you want this script to manage it)
 # echo "Configuring NGINX on bastian VM..."
-# ssh $BASTIAN_USER@$BASTIAN_IP "cat > /etc/nginx/conf.d/ssl.conf << 'EOF'
-# server {
-#     listen 443 ssl;
-#     server_name _; # Or your specific domain(s)
+# Configure NGINX on bastian VM
+echo "Configuring NGINX on bastian VM..."
+# Create SSL configuration for NGINX
+
+ssh $BASTIAN_USER@$BASTIAN_IP "cat > /etc/nginx/conf.d/ssl.conf << 'EOF'
+server {
+    listen 443 ssl;
+    server_name _; # Or your specific domain(s)
     
-#     ssl_certificate $REMOTE_CERT_PATH;
-#     ssl_certificate_key $REMOTE_KEY_PATH;
+    ssl_certificate $REMOTE_CERT_PATH;
+    ssl_certificate_key $REMOTE_KEY_PATH;
     
-#     ssl_protocols TLSv1.2 TLSv1.3;
-#     ssl_prefer_server_ciphers on;
-#     ssl_ciphers 'EECDH+AESGCM:EDH+AESGCM:AES256+EECDH:AES256+EDH';
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+    ssl_ciphers 'EECDH+AESGCM:EDH+AESGCM:AES256+EECDH:AES256+EDH';
     
-#     # Add your proxy or other configuration here
-    
-#     location / {
-#         root /var/www/html;
-#         index index.html;
-#     }
-# }
-# EOF"
+    include /etc/nginx/sites-enabled/locations/*.conf;
+
+    location / {
+        root /var/www/html;
+        index index.html;
+    }
+}
+EOF"
 
 # Restart NGINX on bastian VM (Optional - only if you want this script to manage it)
 # echo "Restarting NGINX on bastian VM..."
