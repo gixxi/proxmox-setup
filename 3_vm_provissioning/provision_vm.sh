@@ -205,6 +205,109 @@ echo "INFO: Installing base packages including nginx and ufw..."
 apt-get install -y docker.io supervisor emacs vim nano curl wget parted gdisk mosh nginx ufw
 if [ \$? -ne 0 ]; then echo "WARNING: apt install failed."; fi
 
+# --- Configure Nginx ---
+echo "INFO: Configuring Nginx..."
+NGINX_CONF="/etc/nginx/nginx.conf"
+NGINX_CONF_BAK="/etc/nginx/nginx.conf.bak"
+
+# Backup the original config
+if [ -f "\$NGINX_CONF" ]; then
+    echo "Backing up default Nginx config to \$NGINX_CONF_BAK"
+    cp "\$NGINX_CONF" "\$NGINX_CONF_BAK"
+fi
+
+# Create the new nginx.conf with desired settings
+cat > "\$NGINX_CONF" << 'NGINX_EOF'
+user www-data;
+worker_processes auto; # Adjust based on CPU cores if needed
+pid /run/nginx.pid;
+include /etc/nginx/modules-enabled/*.conf;
+
+events {
+    # Support large number of connections
+    worker_connections 20000;
+    # multi_accept on; # Uncomment if needed for high connection rates
+}
+
+http {
+    # Handle large file uploads
+    client_max_body_size 10M;
+
+    ##
+    # Basic Settings
+    ##
+    sendfile on;
+    tcp_nopush on;
+    tcp_nodelay on; # Often used with tcp_nopush and sendfile
+    keepalive_timeout 65;
+    types_hash_max_size 2048;
+    # server_tokens off; # Uncomment to hide Nginx version
+
+    # server_names_hash_bucket_size 64; # Uncomment if long server names are used
+    # server_name_in_redirect off;
+
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    ##
+    # SSL Settings (Sensible defaults, customize further in vhosts)
+    ##
+    ssl_protocols TLSv1.2 TLSv1.3; # Modern protocols
+    ssl_prefer_server_ciphers on;
+    # Add recommended ciphers here or in vhost configs if needed
+    # ssl_ciphers 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:...';
+
+    ##
+    # Logging Settings
+    ##
+    access_log /var/log/nginx/access.log;
+    error_log /var/log/nginx/error.log;
+
+    ##
+    # Gzip Settings
+    ##
+    gzip on;
+    gzip_disable "msie6"; # Disable for old IE versions
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 6; # Balance between CPU and compression ratio
+    gzip_buffers 16 8k;
+    gzip_http_version 1.1;
+    gzip_min_length 256; # Don't gzip very small files
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript image/svg+xml;
+
+    ##
+    # Virtual Host Configs
+    ##
+    include /etc/nginx/conf.d/*.conf;
+    # Ensure the default sites-enabled directory is included for standard vhost setup
+    include /etc/nginx/sites-enabled/*;
+}
+NGINX_EOF
+
+echo "INFO: New Nginx configuration written to \$NGINX_CONF"
+
+# Check Nginx configuration syntax
+nginx -t
+if [ \$? -ne 0 ]; then
+    echo "ERROR: Nginx configuration test failed. Restoring backup."
+    if [ -f "\$NGINX_CONF_BAK" ]; then
+        cp "\$NGINX_CONF_BAK" "\$NGINX_CONF"
+    fi
+    # Decide how to handle this - maybe exit or just warn?
+    # For now, we'll proceed but Nginx might fail to start/reload
+else
+    echo "INFO: Nginx configuration test successful."
+fi
+
+# Restart Nginx to apply changes
+echo "INFO: Restarting Nginx service..."
+systemctl restart nginx
+if [ \$? -ne 0 ]; then
+    echo "WARNING: Failed to restart Nginx service. Check config and logs."
+fi
+# --- End Nginx Configuration ---
+
 echo "INFO: Enabling and starting Docker service..."
 systemctl enable --now docker
 if [ \$? -ne 0 ]; then echo "WARNING: Failed to enable/start docker."; fi
@@ -271,6 +374,10 @@ echo "--- Cloud-Init User Data Script Finished ---"
 # Optional: Print final UFW status to cloud-init log
 echo "Final UFW status:"
 ufw status verbose
+
+# Optional: Print Nginx status
+echo "Nginx service status:"
+systemctl status nginx --no-pager || echo "Could not get Nginx status."
 
 cat /etc/ssh/sshd_config
 
