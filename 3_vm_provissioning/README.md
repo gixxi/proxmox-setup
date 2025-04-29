@@ -50,6 +50,9 @@ Depending on the usage of the profile we dissable certain services
 
 Depending on the intended role of the VM, certain services should be enabled or disabled:
 
+Either you log into the VM and do the following:
+
+
 ### Bastian/Gateway VM
 
 For VMs serving as bastian hosts or gateways, configure the following to disable the docker service:
@@ -67,6 +70,12 @@ systemctl disable nginx
 ufw allow 8080:8090/tcp
 ufw allow 18080:18090/tcp
 ufw allow 28080:28090/tcp
+```
+
+... or call the script restrict.sh with the following parameters:
+
+```bash
+./restrict.sh <ip_address> <app or bastian>
 ```
 
 
