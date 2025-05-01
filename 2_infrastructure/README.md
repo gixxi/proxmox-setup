@@ -64,8 +64,5 @@ AllowUsers username
 
 ### Adding the SSH key to the authorized_keys file
 
-The SSH key must be added to the **authorized_keys** file.
+The SSH key must be added to the **authorized_keys** file of the root user.
 
-```bash
-
-```
