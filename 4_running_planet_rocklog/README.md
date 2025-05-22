@@ -55,6 +55,11 @@ ifndef Xmx
         Xmx := 4g
 endif
 
+
+JAVA_HEAP=$(Xmx)
+HEAP_NUM=$(JAVA_HEAP:g=)
+DOCKER_MEMORY=$(shell echo $$(( $(HEAP_NUM) + 2 ))g)
+
 ifndef IMAGE
         IMAGE := hub5.planet-rocklog.com:5000/vlic/vlic_runner:$(VERSION)
 endif
@@ -95,7 +100,7 @@ couchdb: persist
 64bit: extract
         echo "Building container with unique data dir $(CONT_NAME) with archive $(ARCHIVE) for customer data, image=$(IMAGE) -Xmx=$(Xmx) cores=$(CORES)"
         -sudo docker rm -f $(CONT_NAME)
-        sudo docker run -e LANG=C.UTF-8 -e LC_ALL=C.UTF-8 --rm --name=$(CONT_NAME) -p $(VLIC_PORT):8080 -p 1$(VLIC_PORT):4050 -p 2$(VLIC_PORT):5984 -v $(current_dir)/$(CONT_NAME)/.ssh:/.ssh -v $(current_dir)/$(CONT_NAME)/data:/data -v $(current_dir)/$(CONT_NAME)/tmp/vlic:/tmp/vlic -v $(current_dir)/$(CONT_NAME)/log:/usr/local/var/log/couchdb/ -v $(current_dir)/$(CONT_NAME)/log/evictor:/log -v /etc/localtime:/etc/localtime:ro --cpus="$(CORES)" --log-driver=none $(IMAGE) couchdb 64bit $(Xmx)
+        sudo docker run -e LANG=C.UTF-8 -e LC_ALL=C.UTF-8 --rm --name=$(CONT_NAME) -p $(VLIC_PORT):8080 -p 1$(VLIC_PORT):4050 -p 2$(VLIC_PORT):5984 -v $(current_dir)/$(CONT_NAME)/.ssh:/.ssh -v $(current_dir)/$(CONT_NAME)/data:/data -v $(current_dir)/$(CONT_NAME)/tmp/vlic:/tmp/vlic -v $(current_dir)/$(CONT_NAME)/log:/usr/local/var/log/couchdb/ -v $(current_dir)/$(CONT_NAME)/log/evictor:/log -v /etc/localtime:/etc/localtime:ro --cpus="$(CORES)" --log-driver=local --memory=$(DOCKER_MEMORY) $(IMAGE) couchdb 64bit $(Xmx)
 
 ```
 
