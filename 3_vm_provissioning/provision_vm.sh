@@ -14,8 +14,7 @@ MEMORY=${5:-2048}         # Default system memory to 2 GB
 CPU=${6:-2}               # Default CPU cores to 2
 DISK=${7:-10}             # Default system disk size to 10 GB
 VM_ID=${8:-}              # VM ID (optional)
-# DATA_DISK_SIZE=20       # Removed - No additional data disk
-STORAGE="proxmox_data"    # Proxmox storage ID
+STORAGE=${9:-proxmox_data}    # Proxmox storage ID
 BRIDGE="vmbr0"            # Proxmox network bridge
 GATEWAY="192.168.1.1"     # Network gateway
 SSH_PUB_KEY_PATH="/root/.ssh/id_rsa.pub" # Path to SSH public key for cloud-init
@@ -29,7 +28,7 @@ DOWNLOAD_PATH="/tmp/${IMAGE_NAME}" # Local path to download the image
 # --- Parameter Validation ---
 if [ -z "$VM_NAME" ] || [ -z "$IP_ADDRESS" ] || [ -z "$CI_USER" ] || [ -z "$CI_PASSWORD" ]; then
   echo "Error: Missing mandatory parameters"
-  echo "Usage: $0 <VM_NAME> <ip_address> <ci_user> <ci_password> [memory in MB] [cpu] [disk in GB] [vm_id]"
+  echo "Usage: $0 <VM_NAME> <ip_address> <ci_user> <ci_password> [memory in MB] [cpu] [disk in GB] [vm_id] [storage]"
   exit 1
 fi
 
@@ -210,7 +209,7 @@ apt-get update -y && apt-get upgrade -y
 if [ \$? -ne 0 ]; then echo "WARNING: apt update/upgrade failed."; fi
 
 echo "INFO: Installing base packages including nginx and ufw..."
-apt-get install -y docker.io supervisor emacs vim nano curl wget parted gdisk mosh nginx ufw zsh
+apt-get install -y docker.io supervisor emacs vim nano curl wget parted gdisk mosh nginx ufw zsh tmux make
 if [ \$? -ne 0 ]; then echo "WARNING: apt install failed."; fi
 
 # Restart Docker to apply new configuration
