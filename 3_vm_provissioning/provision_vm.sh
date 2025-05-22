@@ -1,6 +1,6 @@
 #!/bin/bash
 # VM Provisioning Script for Proxmox
-# Usage: ./provision_vm.sh <vm_name> <ip_address> <ci_user> <ci_password> [memory in MB] [cpu] [disk in GB]
+# Usage: ./provision_vm.sh <vm_name> <ip_address> <ci_user> <ci_password> [memory in MB] [cpu] [disk in GB] [vm_id]
 # Memory defaults to 2048 MB (2 GB), CPU to 2 cores, System Disk (DISK) to 10 GB.
 # Creates only the primary system disk.
 
@@ -13,6 +13,7 @@ CI_PASSWORD=$4           # Cloud-init password (Mandatory)
 MEMORY=${5:-2048}         # Default system memory to 2 GB
 CPU=${6:-2}               # Default CPU cores to 2
 DISK=${7:-10}             # Default system disk size to 10 GB
+VM_ID=${8:-}              # VM ID (optional)
 # DATA_DISK_SIZE=20       # Removed - No additional data disk
 STORAGE="proxmox_data"    # Proxmox storage ID
 BRIDGE="vmbr0"            # Proxmox network bridge
@@ -28,7 +29,7 @@ DOWNLOAD_PATH="/tmp/${IMAGE_NAME}" # Local path to download the image
 # --- Parameter Validation ---
 if [ -z "$VM_NAME" ] || [ -z "$IP_ADDRESS" ] || [ -z "$CI_USER" ] || [ -z "$CI_PASSWORD" ]; then
   echo "Error: Missing mandatory parameters"
-  echo "Usage: $0 <VM_NAME_name> <ip_address> <ci_user> <ci_password> [memory in MB] [cpu] [disk in GB]"
+  echo "Usage: $0 <VM_NAME> <ip_address> <ci_user> <ci_password> [memory in MB] [cpu] [disk in GB] [vm_id]"
   exit 1
 fi
 
@@ -49,14 +50,16 @@ CUSTOM_SCRIPT_PATH="$SNIPPET_DIR/$CUSTOM_SCRIPT_NAME"
 
 # --- Main Script ---
 
-# 1. Get Next Available VM ID
-echo "INFO: Getting next available VM ID..."
-VM_ID=$(pvesh get /cluster/nextid)
+# 1. Get Next Available VM ID if not provided
 if [ -z "$VM_ID" ]; then
+  echo "INFO: Getting next available VM ID..."
+  VM_ID=$(pvesh get /cluster/nextid)
+  if [ -z "$VM_ID" ]; then
     echo "ERROR: Could not get next VM ID from Proxmox."
     exit 1
+  fi
+  echo "INFO: Next available VM ID is $VM_ID."
 fi
-echo "INFO: Next available VM ID is $VM_ID."
 
 # Check if VM already exists (optional, uncomment to prevent overwriting)
 # if qm status $VM_ID > /dev/null 2>&1; then
