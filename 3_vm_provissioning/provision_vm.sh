@@ -210,33 +210,6 @@ echo "INFO: Installing base packages including nginx and ufw..."
 apt-get install -y docker.io supervisor emacs vim nano curl wget parted gdisk mosh nginx ufw zsh
 if [ \$? -ne 0 ]; then echo "WARNING: apt install failed."; fi
 
-# Configure Docker daemon with memory limits
-echo "INFO: Configuring Docker daemon with memory limits..."
-mkdir -p /etc/docker
-cat > /etc/docker/daemon.json << 'DOCKER_EOF'
-{
-  "default-ulimits": {
-    "memlock": {
-      "name": "memlock",
-      "soft": -1,
-      "hard": -1
-    }
-  },
-  "default-runtime": "runc",
-  "runtimes": {
-    "runc": {
-      "path": "runc"
-    }
-  },
-  "default-address-pools": [
-    {
-      "base": "172.16.0.0/16",
-      "size": 24
-    }
-  ]
-}
-DOCKER_EOF
-
 # Restart Docker to apply new configuration
 systemctl restart docker
 if [ \$? -ne 0 ]; then echo "WARNING: Failed to restart Docker service"; fi
