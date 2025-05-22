@@ -103,12 +103,15 @@ couchdb: persist
 
 in /etc/supervisor/conf.d/
 
-
-
-
-
-
 - Planet Rocklog configuration file
 - Planet Rocklog data directory
 
+## Setup Backup using sshfs
+
+Create a script backu
+
+```
+
+
+```
 

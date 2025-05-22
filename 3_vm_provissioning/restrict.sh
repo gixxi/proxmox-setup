@@ -10,7 +10,7 @@ IP=$1
 TYPE=$2
 
 if [ "$TYPE" == "app" ]; then
-    ssh root@$IP exec -c "systemctl disable nginx && systemctl disable nginx && ufw allow 8080:8090/tcp && ufw allow 18080:18090/tcp && ufw allow 28080:28090/tcp"
+    ssh root@$IP exec -c "systemctl disable nginx && systemctl disable nginx && ufw allow 8080:8090/tcp && ufw allow 18080:18090/tcp && ufw allow 28080:28090/tcp && apt-get install make"
 elif [ "$TYPE" == "bastian" ]; then
     ssh root@$IP exec -c "systemctl disable docker"
 fi
