@@ -194,7 +194,10 @@ fi
 # 10. Configure Cloud-Init
 echo "INFO: Configuring Cloud-Init..."
 qm set $VM_ID --citype nocloud
-qm set $VM_ID --ipconfig0 "ip=${IP_ADDRESS}/24,gw=${GATEWAY}"
+# Configure IP, gateway, and DNS servers
+qm set $VM_ID --ipconfig0 "ip=${IP_ADDRESS}/24,gw=${GATEWAY},ip6=auto"
+# Set DNS servers (primary: router, secondary: Google DNS, tertiary: Cloudflare)
+qm set $VM_ID --nameserver "192.168.1.1 8.8.8.8 1.1.1.1"
 qm set $VM_ID --ciuser "${CI_USER}"
 qm set $VM_ID --cipassword "${CI_PASSWORD}"
 qm set $VM_ID --sshkeys "${SSH_PUB_KEY_PATH}"
@@ -365,6 +368,32 @@ if [ \$? -ne 0 ]; then echo "WARNING: Failed to restart sshd service"; fi
 # Timezone
 echo "INFO: Setting timezone to ${TIMEZONE}..."
 timedatectl set-timezone ${TIMEZONE}
+
+# --- Configure DNS ---
+echo "INFO: Configuring DNS servers..."
+# Backup original resolv.conf
+cp /etc/resolv.conf /etc/resolv.conf.backup 2>/dev/null || echo "No backup needed"
+
+# Create new resolv.conf with proper DNS servers
+cat > /etc/resolv.conf << 'RESOLV_EOF'
+# DNS configuration for ${VM_NAME}
+# Primary: Router (Unifi)
+nameserver 192.168.1.1
+# Secondary: Google DNS
+nameserver 8.8.8.8
+# Tertiary: Cloudflare DNS
+nameserver 1.1.1.1
+# Search domain (optional)
+search local
+RESOLV_EOF
+
+echo "INFO: DNS configuration written to /etc/resolv.conf"
+echo "INFO: Testing DNS resolution..."
+nslookup google.com 2>/dev/null && echo "DNS resolution working" || echo "WARNING: DNS resolution failed"
+
+# Test internet connectivity
+echo "INFO: Testing internet connectivity..."
+ping -c 1 8.8.8.8 >/dev/null 2>&1 && echo "Internet connectivity working" || echo "WARNING: Internet connectivity failed"
 
 # --- Configure UFW (Uncomplicated Firewall) ---
 echo "INFO: Configuring UFW firewall rules..."

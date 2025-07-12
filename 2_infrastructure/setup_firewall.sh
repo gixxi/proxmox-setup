@@ -101,7 +101,11 @@ else
 fi
 
 # Enable iptables service if available
-if systemctl list-unit-files | grep -q iptables; then
+if systemctl list-unit-files | grep -q netfilter-persistent; then
+    print_status "Enabling netfilter-persistent service..."
+    systemctl enable netfilter-persistent
+    systemctl start netfilter-persistent
+elif systemctl list-unit-files | grep -q iptables; then
     print_status "Enabling iptables service..."
     systemctl enable iptables
     systemctl start iptables
