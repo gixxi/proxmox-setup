@@ -16,7 +16,8 @@ DISK=${7:-10}             # Default system disk size to 10 GB
 VM_ID=${8:-}              # VM ID (optional)
 STORAGE=${9:-proxmox_data}    # Proxmox storage ID
 BRIDGE="vmbr0"            # Proxmox network bridge
-GATEWAY="192.168.1.1"     # Network gateway
+# Use GATEWAY from environment if set, otherwise use default
+GATEWAY="${GATEWAY:-192.168.3.1}"    # Network gateway (matches Proxmox host network)
 SSH_PUB_KEY_PATH="/root/.ssh/id_rsa.pub" # Path to SSH public key for cloud-init
 TIMEZONE="Europe/Zurich"  # Timezone for the VM
 
@@ -197,7 +198,7 @@ qm set $VM_ID --citype nocloud
 # Configure IP, gateway, and DNS servers
 qm set $VM_ID --ipconfig0 "ip=${IP_ADDRESS}/24,gw=${GATEWAY},ip6=auto"
 # Set DNS servers (primary: router, secondary: Google DNS, tertiary: Cloudflare)
-qm set $VM_ID --nameserver "192.168.1.1 8.8.8.8 1.1.1.1"
+qm set $VM_ID --nameserver "192.168.3.1 8.8.8.8 1.1.1.1"
 qm set $VM_ID --ciuser "${CI_USER}"
 qm set $VM_ID --cipassword "${CI_PASSWORD}"
 qm set $VM_ID --sshkeys "${SSH_PUB_KEY_PATH}"
@@ -377,8 +378,8 @@ cp /etc/resolv.conf /etc/resolv.conf.backup 2>/dev/null || echo "No backup neede
 # Create new resolv.conf with proper DNS servers
 cat > /etc/resolv.conf << 'RESOLV_EOF'
 # DNS configuration for ${VM_NAME}
-# Primary: Router (Unifi)
-nameserver 192.168.1.1
+# Primary: Router (matches Proxmox host network)
+nameserver 192.168.3.1
 # Secondary: Google DNS
 nameserver 8.8.8.8
 # Tertiary: Cloudflare DNS
@@ -402,7 +403,7 @@ echo "INFO: Configuring UFW firewall rules..."
 echo "Allowing SSH from specific IPs..."
 ufw allow from 172.105.94.119 to any port 22 proto tcp
 ufw allow from 116.203.216.1 to any port 22 proto tcp
-ufw allow from 192.168.1.0/24 to any port 22 proto tcp # Keep local access if needed
+ufw allow from 192.168.3.0/24 to any port 22 proto tcp # Local network access
 ufw allow from 5.161.184.133 to any port 22 proto tcp
 
 # Explicitly deny SSH from other sources (IPv4 and IPv6)

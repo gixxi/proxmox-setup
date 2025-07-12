@@ -84,8 +84,8 @@ cp /etc/resolv.conf /etc/resolv.conf.backup.$(date +%Y%m%d_%H%M%S) 2>/dev/null
 # Create new resolv.conf with proper DNS servers
 cat > /etc/resolv.conf << 'RESOLV_EOF'
 # DNS configuration - Fixed by script
-# Primary: Router (Unifi)
-nameserver 192.168.1.1
+# Primary: Router (matches Proxmox host network)
+nameserver 192.168.3.1
 # Secondary: Google DNS
 nameserver 8.8.8.8
 # Tertiary: Cloudflare DNS
@@ -171,7 +171,7 @@ echo ""
 echo "To manually fix DNS on VM, SSH into it and run:"
 echo "  echo 'nameserver 8.8.8.8' > /etc/resolv.conf"
 echo "  echo 'nameserver 1.1.1.1' >> /etc/resolv.conf"
-echo "  echo 'nameserver 192.168.1.1' >> /etc/resolv.conf"
+echo "  echo 'nameserver 192.168.3.1' >> /etc/resolv.conf"
 
 echo ""
 echo "=================================================="
