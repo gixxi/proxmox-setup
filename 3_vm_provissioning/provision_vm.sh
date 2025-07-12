@@ -124,15 +124,18 @@ if [ $? -ne 0 ]; then
     # rm -f "${DOWNLOAD_PATH}"
     exit 1
 fi
-# Note: importdisk creates a disk named 'vm-<VMID>-disk-<INDEX>' (e.g., vm-108-disk-0)
-# The actual filename might include an extension like .raw or .qcow2 depending on storage/import options.
-# We'll assume .raw based on common import behavior and your example. Adjust if needed.
-IMPORTED_DISK_FILENAME="vm-${VM_ID}-disk-0.raw"
+# Detect if storage is ZFS (by name or by checking storage type, here we use name as a quick fix)
+if [[ "$STORAGE" == *zfs* || "$STORAGE" == *local_data* ]]; then
+    IMPORTED_DISK_FILENAME="vm-${VM_ID}-disk-0"
+    DISK_PATH_FOR_SET="${STORAGE}:${IMPORTED_DISK_FILENAME}"
+else
+    IMPORTED_DISK_FILENAME="vm-${VM_ID}-disk-0.raw"
+    DISK_PATH_FOR_SET="${STORAGE}:${VM_ID}/${IMPORTED_DISK_FILENAME}"
+fi
 echo "INFO: Disk image imported. Assuming filename ${IMPORTED_DISK_FILENAME} in VM directory."
 
 # 5. Attach the imported disk as the boot disk (scsi0 -> /dev/sda)
 # Use the format that includes the VM ID subdirectory, matching your working example.
-DISK_PATH_FOR_SET="${STORAGE}:${VM_ID}/${IMPORTED_DISK_FILENAME}"
 echo "INFO: Attaching imported disk using path ${DISK_PATH_FOR_SET} as scsi0..."
 # Using -scsi0 syntax as per your example, though --scsi0 should also work.
 qm set $VM_ID --scsihw virtio-scsi-pci -scsi0 "${DISK_PATH_FOR_SET}"
