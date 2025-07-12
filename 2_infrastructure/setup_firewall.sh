@@ -84,8 +84,17 @@ iptables -A INPUT -p icmp --icmp-type echo-reply -j ACCEPT
 # Save iptables rules
 print_status "Saving iptables rules..."
 if command -v iptables-save >/dev/null 2>&1; then
+    # Create directory if it doesn't exist
+    mkdir -p /etc/iptables
     iptables-save > /etc/iptables/rules.v4
     print_status "Rules saved to /etc/iptables/rules.v4"
+    
+    # Install iptables-persistent if not already installed
+    if ! dpkg -l | grep -q iptables-persistent; then
+        print_status "Installing iptables-persistent for rule persistence..."
+        apt-get update
+        apt-get install -y iptables-persistent
+    fi
 else
     print_warning "iptables-save not found. Rules will not persist after reboot."
     print_warning "Consider installing iptables-persistent: apt-get install iptables-persistent"
@@ -96,6 +105,17 @@ if systemctl list-unit-files | grep -q iptables; then
     print_status "Enabling iptables service..."
     systemctl enable iptables
     systemctl start iptables
+fi
+
+# Alternative method for rule persistence (for systems without iptables-persistent)
+if [ ! -f /etc/network/if-pre-up.d/iptables ]; then
+    print_status "Creating alternative persistence method..."
+    cat > /etc/network/if-pre-up.d/iptables << 'EOF'
+#!/bin/bash
+iptables-restore < /etc/iptables/rules.v4
+EOF
+    chmod +x /etc/network/if-pre-up.d/iptables
+    print_status "Created /etc/network/if-pre-up.d/iptables for rule persistence"
 fi
 
 # Display current rules
