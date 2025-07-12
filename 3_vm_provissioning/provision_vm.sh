@@ -38,11 +38,35 @@ if ! [[ "$IP_ADDRESS" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 fi
 
 if [ ! -f "$SSH_PUB_KEY_PATH" ]; then
-    echo "Error: SSH public key not found at $SSH_PUB_KEY_PATH"s
+    echo "Error: SSH public key not found at $SSH_PUB_KEY_PATH"
     exit 1
 fi
 
-VM_NAME="$VM_NAME"
+# Validate and sanitize VM name for Proxmox DNS compatibility
+# Proxmox requires VM names to be valid DNS names (letters, numbers, hyphens only)
+ORIGINAL_VM_NAME="$VM_NAME"
+VM_NAME=$(echo "$VM_NAME" | sed 's/_/-/g')  # Replace underscores with hyphens
+
+# Additional validation: ensure name only contains valid DNS characters
+if ! [[ "$VM_NAME" =~ ^[a-zA-Z0-9-]+$ ]]; then
+  echo "Error: VM name contains invalid characters. Only letters, numbers, and hyphens are allowed."
+  echo "Original name: $ORIGINAL_VM_NAME"
+  echo "Sanitized name: $VM_NAME"
+  exit 1
+fi
+
+# Check if name starts or ends with hyphen (invalid DNS name)
+if [[ "$VM_NAME" =~ ^- ]] || [[ "$VM_NAME" =~ -$ ]]; then
+  echo "Error: VM name cannot start or end with a hyphen."
+  echo "Original name: $ORIGINAL_VM_NAME"
+  echo "Sanitized name: $VM_NAME"
+  exit 1
+fi
+
+# Inform user if name was modified
+if [ "$ORIGINAL_VM_NAME" != "$VM_NAME" ]; then
+  echo "INFO: VM name sanitized from '$ORIGINAL_VM_NAME' to '$VM_NAME' for Proxmox compatibility"
+fi
 SNIPPET_DIR="/var/lib/vz/snippets"
 CUSTOM_SCRIPT_NAME="custom-$VM_NAME.sh"
 CUSTOM_SCRIPT_PATH="$SNIPPET_DIR/$CUSTOM_SCRIPT_NAME"
