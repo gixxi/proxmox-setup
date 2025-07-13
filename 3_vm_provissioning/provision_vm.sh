@@ -16,7 +16,8 @@ DISK=${7:-10}             # Default system disk size to 10 GB
 VM_ID=${8:-}              # VM ID (optional)
 STORAGE=${9:-proxmox_data}    # Proxmox storage ID
 BRIDGE="vmbr0"            # Proxmox network bridge
-GATEWAY="192.168.1.1"     # Network gateway
+# Use GATEWAY from environment if set, otherwise use default
+GATEWAY="${GATEWAY:-192.168.3.1}"    # Network gateway (matches Proxmox host network)
 SSH_PUB_KEY_PATH="/root/.ssh/id_rsa.pub" # Path to SSH public key for cloud-init
 TIMEZONE="Europe/Zurich"  # Timezone for the VM
 
@@ -38,11 +39,35 @@ if ! [[ "$IP_ADDRESS" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 fi
 
 if [ ! -f "$SSH_PUB_KEY_PATH" ]; then
-    echo "Error: SSH public key not found at $SSH_PUB_KEY_PATH"s
+    echo "Error: SSH public key not found at $SSH_PUB_KEY_PATH"
     exit 1
 fi
 
-VM_NAME="$VM_NAME"
+# Validate and sanitize VM name for Proxmox DNS compatibility
+# Proxmox requires VM names to be valid DNS names (letters, numbers, hyphens only)
+ORIGINAL_VM_NAME="$VM_NAME"
+VM_NAME=$(echo "$VM_NAME" | sed 's/_/-/g')  # Replace underscores with hyphens
+
+# Additional validation: ensure name only contains valid DNS characters
+if ! [[ "$VM_NAME" =~ ^[a-zA-Z0-9-]+$ ]]; then
+  echo "Error: VM name contains invalid characters. Only letters, numbers, and hyphens are allowed."
+  echo "Original name: $ORIGINAL_VM_NAME"
+  echo "Sanitized name: $VM_NAME"
+  exit 1
+fi
+
+# Check if name starts or ends with hyphen (invalid DNS name)
+if [[ "$VM_NAME" =~ ^- ]] || [[ "$VM_NAME" =~ -$ ]]; then
+  echo "Error: VM name cannot start or end with a hyphen."
+  echo "Original name: $ORIGINAL_VM_NAME"
+  echo "Sanitized name: $VM_NAME"
+  exit 1
+fi
+
+# Inform user if name was modified
+if [ "$ORIGINAL_VM_NAME" != "$VM_NAME" ]; then
+  echo "INFO: VM name sanitized from '$ORIGINAL_VM_NAME' to '$VM_NAME' for Proxmox compatibility"
+fi
 SNIPPET_DIR="/var/lib/vz/snippets"
 CUSTOM_SCRIPT_NAME="custom-$VM_NAME.sh"
 CUSTOM_SCRIPT_PATH="$SNIPPET_DIR/$CUSTOM_SCRIPT_NAME"
@@ -100,15 +125,18 @@ if [ $? -ne 0 ]; then
     # rm -f "${DOWNLOAD_PATH}"
     exit 1
 fi
-# Note: importdisk creates a disk named 'vm-<VMID>-disk-<INDEX>' (e.g., vm-108-disk-0)
-# The actual filename might include an extension like .raw or .qcow2 depending on storage/import options.
-# We'll assume .raw based on common import behavior and your example. Adjust if needed.
-IMPORTED_DISK_FILENAME="vm-${VM_ID}-disk-0.raw"
+# Detect if storage is ZFS (by name or by checking storage type, here we use name as a quick fix)
+if [[ "$STORAGE" == *zfs* || "$STORAGE" == *local_data* ]]; then
+    IMPORTED_DISK_FILENAME="vm-${VM_ID}-disk-0"
+    DISK_PATH_FOR_SET="${STORAGE}:${IMPORTED_DISK_FILENAME}"
+else
+    IMPORTED_DISK_FILENAME="vm-${VM_ID}-disk-0.raw"
+    DISK_PATH_FOR_SET="${STORAGE}:${VM_ID}/${IMPORTED_DISK_FILENAME}"
+fi
 echo "INFO: Disk image imported. Assuming filename ${IMPORTED_DISK_FILENAME} in VM directory."
 
 # 5. Attach the imported disk as the boot disk (scsi0 -> /dev/sda)
 # Use the format that includes the VM ID subdirectory, matching your working example.
-DISK_PATH_FOR_SET="${STORAGE}:${VM_ID}/${IMPORTED_DISK_FILENAME}"
 echo "INFO: Attaching imported disk using path ${DISK_PATH_FOR_SET} as scsi0..."
 # Using -scsi0 syntax as per your example, though --scsi0 should also work.
 qm set $VM_ID --scsihw virtio-scsi-pci -scsi0 "${DISK_PATH_FOR_SET}"
@@ -167,7 +195,10 @@ fi
 # 10. Configure Cloud-Init
 echo "INFO: Configuring Cloud-Init..."
 qm set $VM_ID --citype nocloud
-qm set $VM_ID --ipconfig0 "ip=${IP_ADDRESS}/24,gw=${GATEWAY}"
+# Configure IP, gateway, and DNS servers
+qm set $VM_ID --ipconfig0 "ip=${IP_ADDRESS}/24,gw=${GATEWAY},ip6=auto"
+# Set DNS servers (primary: router, secondary: Google DNS, tertiary: Cloudflare)
+qm set $VM_ID --nameserver "192.168.3.1 8.8.8.8 1.1.1.1"
 qm set $VM_ID --ciuser "${CI_USER}"
 qm set $VM_ID --cipassword "${CI_PASSWORD}"
 qm set $VM_ID --sshkeys "${SSH_PUB_KEY_PATH}"
@@ -339,6 +370,32 @@ if [ \$? -ne 0 ]; then echo "WARNING: Failed to restart sshd service"; fi
 echo "INFO: Setting timezone to ${TIMEZONE}..."
 timedatectl set-timezone ${TIMEZONE}
 
+# --- Configure DNS ---
+echo "INFO: Configuring DNS servers..."
+# Backup original resolv.conf
+cp /etc/resolv.conf /etc/resolv.conf.backup 2>/dev/null || echo "No backup needed"
+
+# Create new resolv.conf with proper DNS servers
+cat > /etc/resolv.conf << 'RESOLV_EOF'
+# DNS configuration for ${VM_NAME}
+# Primary: Router (matches Proxmox host network)
+nameserver 192.168.3.1
+# Secondary: Google DNS
+nameserver 8.8.8.8
+# Tertiary: Cloudflare DNS
+nameserver 1.1.1.1
+# Search domain (optional)
+search local
+RESOLV_EOF
+
+echo "INFO: DNS configuration written to /etc/resolv.conf"
+echo "INFO: Testing DNS resolution..."
+nslookup google.com 2>/dev/null && echo "DNS resolution working" || echo "WARNING: DNS resolution failed"
+
+# Test internet connectivity
+echo "INFO: Testing internet connectivity..."
+ping -c 1 8.8.8.8 >/dev/null 2>&1 && echo "Internet connectivity working" || echo "WARNING: Internet connectivity failed"
+
 # --- Configure UFW (Uncomplicated Firewall) ---
 echo "INFO: Configuring UFW firewall rules..."
 
@@ -346,7 +403,7 @@ echo "INFO: Configuring UFW firewall rules..."
 echo "Allowing SSH from specific IPs..."
 ufw allow from 172.105.94.119 to any port 22 proto tcp
 ufw allow from 116.203.216.1 to any port 22 proto tcp
-ufw allow from 192.168.1.0/24 to any port 22 proto tcp # Keep local access if needed
+ufw allow from 192.168.3.0/24 to any port 22 proto tcp # Local network access
 ufw allow from 5.161.184.133 to any port 22 proto tcp
 
 # Explicitly deny SSH from other sources (IPv4 and IPv6)
