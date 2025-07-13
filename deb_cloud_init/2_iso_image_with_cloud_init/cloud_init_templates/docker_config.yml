@@ -1,0 +1,442 @@
+#cloud-config
+# Docker Configuration Template
+# This template configures Docker with ZFS storage and optimization
+
+# Docker Configuration
+# Variables to be replaced during deployment:
+# {DOCKER_DATA_ROOT} - Docker data root directory (e.g., "/data/docker")
+
+runcmd:
+  # Wait for ZFS to be ready
+  - |
+    echo "Waiting for ZFS to be ready..."
+    for i in {1..30}; do
+      if command -v zpool >/dev/null 2>&1 && zpool list data >/dev/null 2>&1; then
+        echo "ZFS data pool is ready"
+        break
+      fi
+      if [ $i -eq 30 ]; then
+        echo "Warning: ZFS data pool not ready after 30 seconds"
+      fi
+      sleep 1
+    done
+  
+  # Create Docker directories
+  - mkdir -p {DOCKER_DATA_ROOT}
+  - mkdir -p /etc/docker
+  - mkdir -p /etc/systemd/system/docker.service.d
+  
+  # Configure Docker daemon
+  - |
+    echo "Configuring Docker daemon..."
+    cat > /etc/docker/daemon.json << 'EOF'
+    {
+      "storage-driver": "overlay2",
+      "data-root": "{DOCKER_DATA_ROOT}",
+      "log-driver": "json-file",
+      "log-opts": {
+        "max-size": "10m",
+        "max-file": "3"
+      },
+      "default-ulimits": {
+        "nofile": {
+          "Hard": 64000,
+          "Name": "nofile",
+          "Soft": 64000
+        }
+      },
+      "live-restore": true,
+      "userland-proxy": false,
+      "experimental": false,
+      "metrics-addr": "127.0.0.1:9323",
+      "insecure-registries": [],
+      "registry-mirrors": [],
+      "max-concurrent-downloads": 10,
+      "max-concurrent-uploads": 5,
+      "storage-opts": [
+        "overlay2.override_kernel_check=true"
+      ]
+    }
+    EOF
+  
+  # Configure Docker systemd service
+  - |
+    echo "Configuring Docker systemd service..."
+    cat > /etc/systemd/system/docker.service.d/override.conf << 'EOF'
+    [Service]
+    Environment="DOCKER_OPTS=--storage-driver=overlay2"
+    LimitNOFILE=infinity
+    LimitNPROC=infinity
+    LimitCORE=infinity
+    TasksMax=infinity
+    TimeoutStartSec=0
+    RestartSec=2
+    Restart=always
+    EOF
+  
+  # Reload systemd and restart Docker
+  - systemctl daemon-reload
+  - systemctl enable docker
+  - systemctl restart docker
+  
+  # Wait for Docker to be ready
+  - |
+    echo "Waiting for Docker to be ready..."
+    for i in {1..30}; do
+      if docker info >/dev/null 2>&1; then
+        echo "Docker is ready"
+        break
+      fi
+      if [ $i -eq 30 ]; then
+        echo "Warning: Docker not ready after 30 seconds"
+      fi
+      sleep 1
+    done
+  
+  # Add admin user to docker group
+  - usermod -aG docker admin
+  
+  # Configure Docker Compose
+  - |
+    echo "Configuring Docker Compose..."
+    if command -v docker-compose >/dev/null 2>&1; then
+      # Create docker-compose directory
+      mkdir -p /opt/docker-compose
+      chown admin:admin /opt/docker-compose
+      
+      # Create sample docker-compose.yml
+      cat > /opt/docker-compose/docker-compose.yml << 'EOF'
+      version: '3.8'
+      
+      services:
+        # Example service - modify as needed
+        example:
+          image: nginx:alpine
+          container_name: example
+          restart: unless-stopped
+          ports:
+            - "8080:80"
+          volumes:
+            - ./data:/usr/share/nginx/html
+          environment:
+            - NGINX_HOST=localhost
+            - NGINX_PORT=80
+      
+      volumes:
+        data:
+          driver: local
+      EOF
+      
+      chown admin:admin /opt/docker-compose/docker-compose.yml
+    fi
+  
+  # Configure Docker logging
+  - |
+    echo "Configuring Docker logging..."
+    cat > /etc/logrotate.d/docker << 'EOF'
+    /var/lib/docker/containers/*/*.log {
+        daily
+        missingok
+        rotate 52
+        compress
+        delaycompress
+        notifempty
+        copytruncate
+    }
+    EOF
+  
+  # Set up Docker monitoring
+  - |
+    echo "Setting up Docker monitoring..."
+    cat > /usr/local/bin/docker-health-check.sh << 'EOF'
+    #!/bin/bash
+    # Docker health check script
+    
+    echo "=== Docker Health Check $(date) ==="
+    
+    # Check Docker service status
+    if systemctl is-active --quiet docker; then
+      echo "Docker Service: RUNNING"
+    else
+      echo "Docker Service: STOPPED"
+      exit 1
+    fi
+    
+    # Check Docker info
+    echo "Docker Info:"
+    docker info 2>/dev/null | grep -E "(Server Version|Storage Driver|Data Root|Total Memory|CPUs)" || echo "Failed to get Docker info"
+    
+    # Check running containers
+    echo "Running Containers:"
+    docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" || echo "No containers running"
+    
+    # Check Docker storage usage
+    echo "Storage Usage:"
+    docker system df --format "table {{.Type}}\t{{.TotalCount}}\t{{.Size}}\t{{.Reclaimable}}" || echo "Failed to get storage info"
+    
+    # Check for unhealthy containers
+    echo "Unhealthy Containers:"
+    docker ps --filter "health=unhealthy" --format "table {{.Names}}\t{{.Status}}" || echo "No unhealthy containers"
+    
+    # Check Docker daemon logs for errors
+    echo "Recent Docker Errors:"
+    journalctl -u docker.service --since "1 hour ago" | grep -i error | tail -5 || echo "No recent errors"
+    EOF
+    
+    chmod +x /usr/local/bin/docker-health-check.sh
+    
+    # Add to crontab
+    echo "*/5 * * * * root /usr/local/bin/docker-health-check.sh >> /var/log/docker-health.log 2>&1" >> /etc/cron.d/docker-monitoring
+  
+  # Configure Docker cleanup
+  - |
+    echo "Setting up Docker cleanup..."
+    cat > /usr/local/bin/docker-cleanup.sh << 'EOF'
+    #!/bin/bash
+    # Docker cleanup script
+    
+    echo "=== Docker Cleanup $(date) ==="
+    
+    # Remove stopped containers
+    echo "Removing stopped containers..."
+    docker container prune -f
+    
+    # Remove unused images
+    echo "Removing unused images..."
+    docker image prune -f
+    
+    # Remove unused volumes
+    echo "Removing unused volumes..."
+    docker volume prune -f
+    
+    # Remove unused networks
+    echo "Removing unused networks..."
+    docker network prune -f
+    
+    # Remove build cache
+    echo "Removing build cache..."
+    docker builder prune -f
+    
+    # Show cleanup results
+    echo "Cleanup completed. Current usage:"
+    docker system df
+    EOF
+    
+    chmod +x /usr/local/bin/docker-cleanup.sh
+    
+    # Add to crontab (daily at 2 AM)
+    echo "0 2 * * * root /usr/local/bin/docker-cleanup.sh >> /var/log/docker-cleanup.log 2>&1" >> /etc/cron.d/docker-cleanup
+  
+  # Configure log rotation for Docker logs
+  - |
+    echo "Configuring Docker log rotation..."
+    cat > /etc/logrotate.d/docker-logs << 'EOF'
+    /var/log/docker-health.log {
+        daily
+        missingok
+        rotate 30
+        compress
+        delaycompress
+        notifempty
+        create 644 root root
+    }
+    
+    /var/log/docker-cleanup.log {
+        daily
+        missingok
+        rotate 30
+        compress
+        delaycompress
+        notifempty
+        create 644 root root
+    }
+    EOF
+  
+  # Install Docker utilities
+  - |
+    echo "Installing Docker utilities..."
+    apt-get install -y docker-compose-plugin || echo "Docker Compose plugin not available"
+    
+    # Install useful Docker tools
+    curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+    chmod +x /usr/local/bin/docker-compose
+    
+    # Install dive for image analysis
+    curl -L "https://github.com/wagoodman/dive/releases/latest/download/dive_$(uname -s)_$(uname -m).tar.gz" | tar -xz -C /usr/local/bin dive || echo "Dive installation failed"
+  
+  # Configure Docker security
+  - |
+    echo "Configuring Docker security..."
+    
+    # Create Docker daemon security configuration
+    cat > /etc/docker/daemon-security.json << 'EOF'
+    {
+      "userns-remap": "default",
+      "no-new-privileges": true,
+      "seccomp-profile": "/etc/docker/seccomp-profile.json",
+      "apparmor-profile": "docker-default"
+    }
+    EOF
+    
+    # Create seccomp profile (basic)
+    cat > /etc/docker/seccomp-profile.json << 'EOF'
+    {
+      "defaultAction": "SCMP_ACT_ERRNO",
+      "architectures": [
+        "SCMP_ARCH_X86_64",
+        "SCMP_ARCH_X86",
+        "SCMP_ARCH_AARCH64"
+      ],
+      "syscalls": [
+        {
+          "names": [
+            "accept",
+            "accept4",
+            "access",
+            "arch_prctl",
+            "bind",
+            "brk",
+            "capget",
+            "capset",
+            "chdir",
+            "clock_gettime",
+            "clone",
+            "close",
+            "connect",
+            "dup",
+            "dup2",
+            "dup3",
+            "epoll_create",
+            "epoll_create1",
+            "epoll_ctl",
+            "epoll_ctl_old",
+            "epoll_pwait",
+            "epoll_wait",
+            "epoll_wait_old",
+            "execve",
+            "exit",
+            "exit_group",
+            "faccessat",
+            "fchdir",
+            "fcntl",
+            "fdatasync",
+            "flock",
+            "fork",
+            "fstat",
+            "fstatfs",
+            "futex",
+            "getcwd",
+            "getdents",
+            "getdents64",
+            "getegid",
+            "geteuid",
+            "getgid",
+            "getpeername",
+            "getpid",
+            "getppid",
+            "getrandom",
+            "getsockname",
+            "getsockopt",
+            "gettid",
+            "gettimeofday",
+            "getuid",
+            "ioctl",
+            "listen",
+            "lseek",
+            "lstat",
+            "madvise",
+            "mkdir",
+            "mmap",
+            "mprotect",
+            "mremap",
+            "munmap",
+            "nanosleep",
+            "newfstatat",
+            "open",
+            "openat",
+            "pipe",
+            "pipe2",
+            "poll",
+            "pread64",
+            "prlimit64",
+            "pwrite64",
+            "read",
+            "readlink",
+            "readlinkat",
+            "recvfrom",
+            "recvmsg",
+            "rename",
+            "rmdir",
+            "rt_sigaction",
+            "rt_sigprocmask",
+            "rt_sigreturn",
+            "rt_sigsuspend",
+            "sched_getaffinity",
+            "sched_yield",
+            "select",
+            "sendfile",
+            "sendmmsg",
+            "sendmsg",
+            "sendto",
+            "set_robust_list",
+            "set_tid_address",
+            "setgid",
+            "setgroups",
+            "setuid",
+            "shutdown",
+            "socket",
+            "socketpair",
+            "stat",
+            "statfs",
+            "sysinfo",
+            "tgkill",
+            "time",
+            "tkill",
+            "uname",
+            "unlink",
+            "unlinkat",
+            "vfork",
+            "wait4",
+            "waitid",
+            "waitpid",
+            "write",
+            "writev"
+          ],
+          "action": "SCMP_ACT_ALLOW"
+        }
+      ]
+    }
+    EOF
+  
+  # Test Docker installation
+  - |
+    echo "Testing Docker installation..."
+    
+    # Test Docker daemon
+    if docker info >/dev/null 2>&1; then
+      echo "✓ Docker daemon is running"
+    else
+      echo "✗ Docker daemon is not running"
+    fi
+    
+    # Test Docker Compose
+    if docker-compose --version >/dev/null 2>&1; then
+      echo "✓ Docker Compose is available"
+    else
+      echo "✗ Docker Compose is not available"
+    fi
+    
+    # Test Docker storage
+    if docker system df >/dev/null 2>&1; then
+      echo "✓ Docker storage is working"
+    else
+      echo "✗ Docker storage is not working"
+    fi
+  
+  # Final Docker configuration message
+  - echo "Docker configuration completed successfully"
+  - echo "Docker version: $(docker --version 2>/dev/null || echo 'Not available')"
+  - echo "Docker Compose version: $(docker-compose --version 2>/dev/null || echo 'Not available')"
+  - echo "Docker data root: {DOCKER_DATA_ROOT}"
+  - echo "Docker storage driver: overlay2"
+  - echo "Docker metrics available at: http://127.0.0.1:9323/metrics" 

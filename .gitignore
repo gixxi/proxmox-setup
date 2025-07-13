@@ -1,0 +1,9 @@
+output/
+*.iso
+*.log
+*.log.*
+*.log.*.*
+*.log.*.*.*
+*.log.*.*.*.*
+*.log.*.*.*.*.*
+deb_cloud_init/1_iso_image_for_hardware_detection/debian-hardware-detect-build/.build

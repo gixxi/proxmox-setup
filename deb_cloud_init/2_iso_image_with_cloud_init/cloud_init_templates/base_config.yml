@@ -1,0 +1,209 @@
+#cloud-config
+# Base Cloud-Init Configuration Template
+# This template provides the foundation for server deployment
+
+# System Configuration
+hostname: server-{TIMESTAMP}
+fqdn: server-{TIMESTAMP}.local
+manage_etc_hosts: true
+
+# User Configuration
+users:
+  - name: admin
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    groups: [sudo, docker]
+    ssh_authorized_keys:
+      - ssh-rsa YOUR_PUBLIC_KEY_HERE
+    lock_passwd: true
+
+# Root Configuration
+# Note: Root password is set but root SSH login is disabled for security
+# To access root, use: sudo su - (as admin user)
+disable_root: false
+ssh_pwauth: false
+
+# Set root password (replace with your desired password hash)
+# Generate hash with: openssl passwd -6 -salt xyz your_password
+chpasswd:
+  list: |
+    root:your_secure_root_password_here
+  expire: false
+
+# SSH Configuration
+ssh_config:
+  PasswordAuthentication: false
+  PubkeyAuthentication: true
+  PermitRootLogin: false
+  AllowUsers: admin
+  Port: 22
+  Protocol: 2
+  LoginGraceTime: 30
+  MaxAuthTries: 3
+  StrictModes: true
+  UsePAM: true
+  PermitEmptyPasswords: false
+  MaxSessions: 4
+
+# Package Management
+package_update: true
+package_upgrade: true
+
+# Essential Packages
+packages:
+  - zfsutils-linux
+  - zfs-dkms
+  - docker.io
+  - docker-compose
+  - nginx
+  - emacs
+  - vim
+  - git
+  - curl
+  - wget
+  - ufw
+  - nfs-common
+  - htop
+  - tmux
+  - unzip
+  - rsync
+  - ethtool
+  - pciutils
+  - dmidecode
+  - fail2ban
+  - unattended-upgrades
+  - supervisor
+
+# Timezone Configuration
+timezone: Europe/Zurich
+
+# Locale Configuration
+locale: en_US.UTF-8
+
+# System Configuration
+system_info:
+  default_user:
+    name: admin
+    groups: [sudo, docker]
+    shell: /bin/bash
+
+# Boot Commands (run before package installation)
+bootcmd:
+  - echo "Starting cloud-init configuration..."
+
+# Run Commands (run after package installation)
+runcmd:
+  # Create necessary directories
+  - mkdir -p /data/docker /data/apps /data/backup /data/logs /mnt/nas
+  
+  # Note: Workload user creation is handled by workload_user_config.yml template
+  # To create a workload user, include that template in your cloud-init configuration
+  
+  # Enable and start essential services
+  - systemctl enable --now docker
+  - systemctl enable --now nginx
+  - systemctl enable --now fail2ban
+  - systemctl enable --now unattended-upgrades
+  - systemctl enable --now supervisor
+  
+  # Disable unnecessary services
+  - systemctl disable bluetooth || true
+  - systemctl disable cups || true
+  - systemctl disable avahi-daemon || true
+  
+  # Configure automatic security updates
+  - echo 'Unattended-Upgrade::Automatic-Reboot "true";' >> /etc/apt/apt.conf.d/50unattended-upgrades
+  - echo 'Unattended-Upgrade::Automatic-Reboot-Time "02:00";' >> /etc/apt/apt.conf.d/50unattended-upgrades
+  
+  # Set up log rotation for cloud-init
+  - echo 'maxsize 10M' >> /etc/logrotate.d/cloud-init
+  - echo 'rotate 5' >> /etc/logrotate.d/cloud-init
+  
+  # Create admin user SSH directory
+  - mkdir -p /home/admin/.ssh
+  - chown admin:admin /home/admin/.ssh
+  - chmod 700 /home/admin/.ssh
+  
+  # Set up SSH key for admin user
+  - cp /root/.ssh/authorized_keys /home/admin/.ssh/ || true
+  - chown admin:admin /home/admin/.ssh/authorized_keys || true
+  - chmod 600 /home/admin/.ssh/authorized_keys || true
+  
+  # Configure system limits
+  - echo 'admin soft nofile 65536' >> /etc/security/limits.conf
+  - echo 'admin hard nofile 65536' >> /etc/security/limits.conf
+  - echo 'root soft nofile 65536' >> /etc/security/limits.conf
+  - echo 'root hard nofile 65536' >> /etc/security/limits.conf
+  
+  # Configure kernel parameters
+  - echo 'net.core.rmem_max = 16777216' >> /etc/sysctl.conf
+  - echo 'net.core.wmem_max = 16777216' >> /etc/sysctl.conf
+  - echo 'net.ipv4.tcp_rmem = 4096 87380 16777216' >> /etc/sysctl.conf
+  - echo 'net.ipv4.tcp_wmem = 4096 65536 16777216' >> /etc/sysctl.conf
+  - echo 'net.ipv4.ip_forward = 1' >> /etc/sysctl.conf
+  - sysctl -p
+  
+  # Configure UFW firewall
+  - ufw --force enable
+  - ufw default deny incoming
+  - ufw default allow outgoing
+  - ufw allow ssh
+  - ufw allow 80/tcp
+  - ufw allow 443/tcp
+  - ufw allow 2375/tcp comment 'Docker daemon'
+  - ufw allow 2376/tcp comment 'Docker daemon TLS'
+  - ufw allow 7946/tcp comment 'Docker swarm'
+  - ufw allow 7946/udp comment 'Docker swarm'
+  - ufw allow 4789/udp comment 'Docker overlay network'
+  - ufw allow 60000:61000/udp comment 'Mosh UDP ports'
+  
+  # Configure Supervisor
+  - mkdir -p /etc/supervisor/conf.d
+  - echo '[supervisord]' > /etc/supervisor/supervisord.conf
+  - echo 'nodaemon=true' >> /etc/supervisor/supervisord.conf
+  - echo 'user=root' >> /etc/supervisor/supervisord.conf
+  - echo 'logfile=/var/log/supervisor/supervisord.log' >> /etc/supervisor/supervisord.conf
+  - echo 'pidfile=/var/run/supervisord.pid' >> /etc/supervisor/supervisord.conf
+  - echo 'childlogdir=/var/log/supervisor' >> /etc/supervisor/supervisord.conf
+  - echo '' >> /etc/supervisor/supervisord.conf
+  - echo '[unix_http_server]' >> /etc/supervisor/supervisord.conf
+  - echo 'file=/var/run/supervisor.sock' >> /etc/supervisor/supervisord.conf
+  - echo 'chmod=0700' >> /etc/supervisor/supervisord.conf
+  - echo '' >> /etc/supervisor/supervisord.conf
+  - echo '[supervisorctl]' >> /etc/supervisor/supervisord.conf
+  - echo 'serverurl=unix:///var/run/supervisor.sock' >> /etc/supervisor/supervisord.conf
+  - echo '' >> /etc/supervisor/supervisord.conf
+  - echo '[rpcinterface:supervisor]' >> /etc/supervisor/supervisord.conf
+  - echo 'supervisor.rpcinterface_factory = supervisor.rpcinterface:make_main_rpcinterface' >> /etc/supervisor/supervisord.conf
+  - echo '' >> /etc/supervisor/supervisord.conf
+  - echo '[include]' >> /etc/supervisor/supervisord.conf
+  - echo 'files = /etc/supervisor/conf.d/*.conf' >> /etc/supervisor/supervisord.conf
+  - mkdir -p /var/log/supervisor
+  - systemctl reload supervisor
+  
+  # Final system message
+  - echo "Base cloud-init configuration completed successfully"
+
+# Final Message
+final_message: |
+  Cloud-init configuration completed successfully!
+  
+  System Information:
+  - Hostname: $(hostname)
+  - Admin User: admin (full sudo access)
+  - Docker: $(docker --version 2>/dev/null || echo 'Not installed')
+  - ZFS: $(zfs --version 2>/dev/null | head -1 || echo 'Not installed')
+  - UFW Status: $(ufw status | head -1 || echo 'Not configured')
+  - Supervisor: $(supervisorctl status 2>/dev/null || echo 'Not running')
+  
+  Next steps:
+  1. SSH as admin: ssh admin@$(hostname -I | awk '{print $1}')
+  2. Check ZFS pools: sudo zpool status
+  3. Check Docker: docker info
+  4. Check network: ip addr show
+  5. Check UFW status: sudo ufw status verbose
+  6. Check Supervisor: sudo supervisorctl status
+  7. Check data permissions: ls -la /data
+  8. Create workload user: /usr/local/bin/create_workload_user.sh <username>
+  
+  Configuration completed at: $(date) 
