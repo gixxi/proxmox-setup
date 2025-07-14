@@ -1,0 +1,170 @@
+#cloud-config
+# ZFS Storage Configuration Template
+# This template configures ZFS pools and datasets based on hardware detection
+
+# ZFS Configuration
+# Variables to be replaced during deployment:
+# {DATA_POOL_DRIVES} - NVMe drives for data pool (e.g., "nvme0n1 nvme1n1")
+# {OS_POOL_DRIVE} - NVMe drive for OS pool (e.g., "nvme2n1")
+
+runcmd:
+  # Wait for ZFS modules to be loaded
+  - modprobe zfs || true
+  - sleep 2
+  
+  # Check if ZFS is available
+  - command -v zpool >/dev/null 2>&1 || (echo "ZFS not available, installing..." && apt-get install -y zfsutils-linux zfs-dkms)
+  
+  # Create data pool (mirror of first two NVMe drives)
+  - |
+    if [ ! -z "{DATA_POOL_DRIVES}" ]; then
+      echo "Creating data pool with drives: {DATA_POOL_DRIVES}"
+      zpool create -f data mirror {DATA_POOL_DRIVES}
+      
+      # Set data pool properties
+      zfs set compression=lz4 data
+      zfs set atime=off data
+      zfs set recordsize=128K data
+      zfs set logbias=throughput data
+      
+      # Create data datasets
+      zfs create data/docker
+      zfs create data/apps
+      zfs create data/backup
+      zfs create data/logs
+      
+      # Set dataset properties
+      zfs set mountpoint=/data/docker data/docker
+      zfs set mountpoint=/data/apps data/apps
+      zfs set mountpoint=/data/backup data/backup
+      zfs set mountpoint=/data/logs data/logs
+      
+      # Set specific properties for docker dataset
+      zfs set recordsize=64K data/docker
+      zfs set compression=lz4 data/docker
+      
+      echo "Data pool created successfully"
+    else
+      echo "No data pool drives specified, skipping data pool creation"
+    fi
+  
+  # Create OS pool (single drive for root filesystem)
+  - |
+    if [ ! -z "{OS_POOL_DRIVE}" ]; then
+      echo "Creating OS pool with drive: {OS_POOL_DRIVE}"
+      zpool create -f rpool {OS_POOL_DRIVE}
+      
+      # Set OS pool properties
+      zfs set compression=lz4 rpool
+      zfs set atime=off rpool
+      zfs set recordsize=128K rpool
+      
+      # Create OS datasets
+      zfs create rpool/ROOT
+      zfs create rpool/ROOT/debian
+      zfs create rpool/var
+      zfs set mountpoint=/var rpool/var
+      zfs create rpool/var/log
+      zfs set mountpoint=/var/log rpool/var/log
+      zfs create rpool/home
+      zfs set mountpoint=/home rpool/home
+      
+      # Set root dataset mountpoint
+      zfs set mountpoint=/ rpool/ROOT/debian
+      
+      echo "OS pool created successfully"
+    else
+      echo "No OS pool drive specified, skipping OS pool creation"
+    fi
+  
+  # Create mount directories
+  - mkdir -p /data/docker /data/apps /data/backup /data/logs /mnt/nas
+  
+  # Set proper permissions
+  - chown admin:admin /data/apps /data/backup || true
+  - chmod 755 /data/docker /data/apps /data/backup /data/logs
+  
+  # Mount all ZFS datasets
+  - zfs mount -a || true
+  
+  # Verify ZFS pools
+  - echo "=== ZFS Pool Status ==="
+  - zpool status || echo "No ZFS pools found"
+  - echo ""
+  - echo "=== ZFS Dataset Status ==="
+  - zfs list -o name,mountpoint,used,avail,refer || echo "No ZFS datasets found"
+  
+  # Configure ZFS auto-snapshot (if available)
+  - |
+    if command -v zfs-auto-snapshot >/dev/null 2>&1; then
+      echo "Configuring ZFS auto-snapshot"
+      systemctl enable zfs-auto-snapshot-hourly
+      systemctl enable zfs-auto-snapshot-daily
+      systemctl enable zfs-auto-snapshot-weekly
+      systemctl enable zfs-auto-snapshot-monthly
+    else
+      echo "ZFS auto-snapshot not available, installing..."
+      apt-get install -y zfs-auto-snapshot || echo "Failed to install zfs-auto-snapshot"
+    fi
+  
+  # Configure ZFS scrub schedule
+  - |
+    echo "Configuring ZFS scrub schedule"
+    cat > /etc/cron.d/zfs-scrub << 'EOF'
+    # ZFS scrub schedule
+    # Scrub data pool weekly on Sunday at 2 AM
+    0 2 * * 0 root zpool scrub data
+    # Scrub OS pool monthly on first Sunday at 3 AM
+    0 3 1-7 * 0 root zpool scrub rpool
+    EOF
+  
+  # Set up ZFS monitoring
+  - |
+    echo "Setting up ZFS monitoring"
+    cat > /usr/local/bin/zfs-health-check.sh << 'EOF'
+    #!/bin/bash
+    # ZFS health check script
+    
+    echo "=== ZFS Health Check $(date) ==="
+    
+    # Check pool status
+    echo "Pool Status:"
+    zpool status -x
+    
+    # Check for errors
+    echo "Error Summary:"
+    zpool status | grep -E "(errors|corrupt|repair)" || echo "No errors found"
+    
+    # Check space usage
+    echo "Space Usage:"
+    zfs list -o name,used,avail,refer,compressratio
+    
+    # Check for snapshots
+    echo "Recent Snapshots:"
+    zfs list -t snapshot -o name,creation | tail -10
+    EOF
+    
+    chmod +x /usr/local/bin/zfs-health-check.sh
+    
+    # Add to crontab
+    echo "0 6 * * * root /usr/local/bin/zfs-health-check.sh >> /var/log/zfs-health.log 2>&1" >> /etc/cron.d/zfs-monitoring
+  
+  # Configure log rotation for ZFS logs
+  - |
+    echo "Configuring ZFS log rotation"
+    cat > /etc/logrotate.d/zfs << 'EOF'
+    /var/log/zfs-health.log {
+        daily
+        missingok
+        rotate 30
+        compress
+        delaycompress
+        notifempty
+        create 644 root root
+    }
+    EOF
+  
+  # Final ZFS configuration message
+  - echo "ZFS configuration completed successfully"
+  - echo "Data pool: $(zpool list data 2>/dev/null | tail -1 | awk '{print $1, $2, $3}')" || echo "Data pool not created"
+  - echo "OS pool: $(zpool list rpool 2>/dev/null | tail -1 | awk '{print $1, $2, $3}')" || echo "OS pool not created" 

@@ -1,0 +1,49 @@
+#cloud-config
+# Workload User Configuration Template
+# This template creates a workload user with controlled access to data and Docker
+
+# Workload User Configuration
+# Replace 'myapp' with your desired username
+WORKLOAD_USERNAME: myapp
+
+# Run Commands for Workload User Setup
+runcmd:
+  # Create workload user with the specified username
+  - /usr/local/bin/create_workload_user.sh ${WORKLOAD_USERNAME}
+  
+  # Add SSH key for the workload user (replace with actual key)
+  - mkdir -p /home/${WORKLOAD_USERNAME}/.ssh
+  - echo "ssh-rsa YOUR_WORKLOAD_PUBLIC_KEY_HERE" > /home/${WORKLOAD_USERNAME}/.ssh/authorized_keys
+  - chown -R ${WORKLOAD_USERNAME}:${WORKLOAD_USERNAME} /home/${WORKLOAD_USERNAME}/.ssh
+  - chmod 700 /home/${WORKLOAD_USERNAME}/.ssh
+  - chmod 600 /home/${WORKLOAD_USERNAME}/.ssh/authorized_keys
+  
+  # Update SSH configuration to allow the workload user
+  - sed -i "s/AllowUsers admin/AllowUsers admin ${WORKLOAD_USERNAME}/" /etc/ssh/sshd_config
+  - systemctl reload ssh
+  
+  # Verify Docker access for the workload user
+  - groups ${WORKLOAD_USERNAME} | grep -q docker || echo "Warning: ${WORKLOAD_USERNAME} not in docker group"
+  
+  # Create a welcome message for the workload user
+  - echo "Welcome ${WORKLOAD_USERNAME}! You have access to:" > /home/${WORKLOAD_USERNAME}/welcome.txt
+  - echo "- /data directory (read/write)" >> /home/${WORKLOAD_USERNAME}/welcome.txt
+  - echo "- Docker commands (no sudo needed)" >> /home/${WORKLOAD_USERNAME}/welcome.txt
+  - echo "- Limited sudo access for system monitoring" >> /home/${WORKLOAD_USERNAME}/welcome.txt
+  - echo "- SSH access with key authentication" >> /home/${WORKLOAD_USERNAME}/welcome.txt
+  - chown ${WORKLOAD_USERNAME}:${WORKLOAD_USERNAME} /home/${WORKLOAD_USERNAME}/welcome.txt
+
+# Final Message
+final_message: |
+  Workload user configuration completed!
+  
+  Created user: ${WORKLOAD_USERNAME}
+  - Home directory: /home/${WORKLOAD_USERNAME}
+  - Data access: /data (read/write)
+  - Docker access: Yes (member of docker group)
+  - SSH access: Yes (key-based authentication)
+  - Sudo access: Limited (system monitoring only)
+  
+  To connect: ssh ${WORKLOAD_USERNAME}@$(hostname -I | awk '{print $1}')
+  
+  Configuration completed at: $(date) 
