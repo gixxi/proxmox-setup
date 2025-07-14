@@ -495,4 +495,7 @@ echo "INFO: Check cloud-init logs in /var/log/cloud-init-output.log inside the V
 # echo "INFO: Cleaning up downloaded image ${DOWNLOAD_PATH}..."
 # rm -f "${DOWNLOAD_PATH}"
 
+# Mask systemd-networkd-wait-online.service to prevent network wait delays
+sudo systemctl mask systemd-networkd-wait-online.service || true
+
 exit 0 
