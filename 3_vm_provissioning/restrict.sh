@@ -19,7 +19,7 @@ if [ "$TYPE" == "app" ]; then
     
     # Create directory structure for rocklog-vlic-docker
     ssh root@$IP exec -c "mkdir -p /var/vlic/rocklog-vlic-docker/vlic_runner"
-    ssh root@$IP exec -c "cd /var/vlic/rocklog-vlic-docker && ln -s /var/vlic/rocklog-vlic-docker/vlic_runner vlic_runner"
+    ssh root@$IP "cd /var/vlic/rocklog-vlic-docker && ln -s /var/vlic/rocklog-vlic-docker/vlic_runner vlic_runner"
     
     # Create Makefile using a different approach
     cat > /tmp/makefile_content << 'EOF'
