@@ -243,6 +243,9 @@ echo "INFO: Installing base packages including nginx and ufw..."
 apt-get install -y docker.io supervisor emacs vim nano curl wget parted gdisk mosh nginx ufw zsh tmux make
 if [ \$? -ne 0 ]; then echo "WARNING: apt install failed."; fi
 
+# Mask systemd-networkd-wait-online.service to prevent network wait delays
+systemctl mask systemd-networkd-wait-online.service || true
+
 # Restart Docker to apply new configuration
 systemctl restart docker
 if [ \$? -ne 0 ]; then echo "WARNING: Failed to restart Docker service"; fi
@@ -494,8 +497,5 @@ echo "INFO: Check cloud-init logs in /var/log/cloud-init-output.log inside the V
 # Optional: Clean up the downloaded image if desired
 # echo "INFO: Cleaning up downloaded image ${DOWNLOAD_PATH}..."
 # rm -f "${DOWNLOAD_PATH}"
-
-# Mask systemd-networkd-wait-online.service to prevent network wait delays
-sudo systemctl mask systemd-networkd-wait-online.service || true
 
 exit 0 
