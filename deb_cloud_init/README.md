@@ -1,285 +1,395 @@
-# Debian Cloud-Init Deployment System
+# Debian Post-Install Cloud-Init Style Configuration
 
-A complete system for automated Debian server deployment using cloud-init, with hardware detection and email reporting capabilities.
-
-## Overview
-
-This system provides two-stage deployment:
-
-1. **Hardware Detection ISO**: Detects and reports hardware specifications via email
-2. **Cloud-Init Deployment ISO**: Installs and configures Debian servers automatically
-
-## Directory Structure
-
-```
-deb_cloud_init/
-├── 1_iso_image_for_hardware_detection/     # Hardware detection ISO
-│   ├── build_hardware_detection_iso.sh     # Build script for hardware detection ISO
-│   ├── hardware_detect.sh                  # Hardware detection script
-│   ├── email_config.sh                     # Email configuration
-│   └── README.md                           # Hardware detection documentation
-├── 2_iso_image_with_cloud_init/           # Cloud-init deployment ISO
-│   ├── build_cloud_init_iso.sh            # Build script for deployment ISO
-│   ├── cloud_init_templates/              # Cloud-init configuration templates
-│   ├── scripts/                           # Deployment scripts
-│   └── README.md                          # Deployment documentation
-└── README.md                              # This file
-```
+This approach lets you install Debian 12 manually (using the official installer), then run a single script to configure a complete Docker-based infrastructure with:
+- SSH hardening and user management
+- Docker and Docker Compose installation
+- ZFS storage configuration with datasets
+- Network configuration (static or DHCP)
+- Backup automation with ZFS snapshots
+- Operations and monitoring scripts
+- Firewall and security hardening
+- Nginx and SSL setup preparation
 
 ## Quick Start
 
-### 1. Build Hardware Detection ISO
+1. **Install Debian 12 manually** (set up root password, boot drive, etc.)
+2. **Copy the following files to your new system:**
+   - `cloudinit_postinstall.sh` (main script)
+   - `cloudinit_config.yaml` (your configuration)
+3. **Install yq if needed:**
+   ```bash
+   sudo apt-get install -y yq
+   ```
+4. **Run the script as root:**
+   ```bash
+   sudo bash cloudinit_postinstall.sh -c cloudinit_config.yaml
+   ```
 
-```bash
-cd deb_cloud_init/1_iso_image_for_hardware_detection/
+## Configuration File Example (`cloudinit_config.yaml`)
 
-# Build with default settings
-sudo ./build_hardware_detection_iso.sh
+```yaml
+# User management
+users:
+  - name: myapp
+    ssh_authorized_keys:
+      - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... user@host"
+    sudo: true
+  - name: anotheruser
+    ssh_authorized_keys:
+      - "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC... user2@host"
+    sudo: false
 
-# Build with custom email address
-sudo ./build_hardware_detection_iso.sh --email admin@example.com
+# ZFS storage configuration
+zfs:
+  pool_name: data
+  mode: mirror
+  devices:
+    - /dev/nvme0n1
+    - /dev/nvme1n1
 
-# Build with custom output directory
-sudo ./build_hardware_detection_iso.sh --output /path/to/output
+# Network configuration
+network:
+  interfaces:
+    - name: enp1s0
+      address: 192.168.1.100/24
+      gateway: 192.168.1.1
+      dns:
+        - 1.1.1.1
+        - 8.8.8.8
+    - name: enp2s0
+      dhcp: true
+
+# Docker configuration
+docker:
+  data_root: /data/docker
+  storage_driver: overlay2
+  log_max_size: 10m
+  log_max_files: 3
+
+# Backup configuration
+backup:
+  zfs_snapshots:
+    daily_retention: 7
+    weekly_retention: 4
+    monthly_retention: 12
+  docker_volumes:
+    retention_days: 30
+  schedule:
+    daily_time: "02:00"
+    weekly_time: "03:00"
+    monthly_time: "04:00"
+
+# Monitoring configuration
+monitoring:
+  fail2ban:
+    enabled: true
+    bantime: 3600
+    findtime: 600
+    maxretry: 3
+  logwatch:
+    enabled: true
+    output: mail
+    detail: Low
+
+# Firewall configuration
+firewall:
+  allow_ports:
+    - 22    # SSH
+    - 80    # HTTP
+    - 443   # HTTPS
+  default_policy: deny_incoming
 ```
 
-### 2. Build Cloud-Init Deployment ISO
+## What the Script Does
 
-```bash
-cd deb_cloud_init/2_iso_image_with_cloud_init/
+### 1. Package Installation
+- Installs `cloud-init`, `yq`, `zfsutils-linux`, `docker.io`, `docker-compose-plugin`
+- Installs `nginx`, `certbot`, `ufw`, `fail2ban`, `logwatch`, and other utilities
+- Updates system packages
 
-# Build with default settings
-sudo ./build_cloud_init_iso.sh
+### 2. User Management
+- Creates specified users with SSH keys
+- Adds users to `workload` and `docker` groups
+- Configures sudo access as specified
+- Updates `/etc/ssh/sshd_config` with `AllowUsers`
 
-# Build with SSH key and workload user
-sudo ./build_cloud_init_iso.sh --ssh-key ~/.ssh/id_rsa.pub --workload myapp
+### 3. SSH Hardening
+- Disables root login and password authentication
+- Enables key-based authentication only
+- Sets secure connection timeouts
+- Disables X11 forwarding and port forwarding
+- Creates backup of original SSH config
 
-# Build with root password
-sudo ./build_cloud_init_iso.sh --password
+### 4. ZFS Storage Setup
+- Creates ZFS pool with specified devices and mode
+- Creates datasets: `/data/apps`, `/data/logs`, `/data/backup`, `/data/docker`, `/data/nginx`, `/data/supervisor`
+- Configures ZFS properties for performance (compression, recordsize, atime)
+- Sets proper ownership and permissions
 
-# Build with all customizations
-sudo ./build_cloud_init_iso.sh \
-  --ssh-key ~/.ssh/id_rsa.pub \
-  --workload myapp \
-  --password \
-  --output /path/to/output
+### 5. Docker Configuration
+- Installs Docker Engine and Docker Compose plugin
+- Configures Docker daemon to use ZFS storage
+- Sets up proper permissions for non-root Docker usage
+- Configures log rotation and resource limits
+
+### 6. Network Configuration
+- Configures network interfaces via `/etc/network/interfaces.d/`
+- Supports both static IP and DHCP configurations
+- Restarts networking service
+
+### 7. Backup Automation
+- Creates ZFS snapshot backup scripts
+- Creates Docker volume backup scripts
+- Sets up cron jobs for daily/weekly/monthly backups
+- Implements retention policies
+
+### 8. Operations Scripts
+- System health monitoring script
+- Docker management script (list, update, cleanup, restart)
+- Storage management script (status, snapshot, cleanup)
+- All scripts located in `/opt/scripts/operations/`
+
+### 9. Security Hardening
+- Configures UFW firewall with default deny incoming
+- Sets up fail2ban for SSH protection
+- Configures logwatch for system monitoring
+- Creates sudoers rules for workload group
+
+### 10. Configuration Symlinks
+- Symlinks `/etc/nginx` to `/data/nginx`
+- Symlinks `/etc/supervisor` to `/data/supervisor`
+- Preserves existing configs if present
+
+## Directory Structure After Installation
+
+```
+/data/
+├── apps/          # Application data
+├── logs/          # Log files
+├── backup/        # Backup data
+├── docker/        # Docker data root
+│   ├── volumes/   # Docker volumes
+│   └── configs/   # Docker configs
+├── nginx/         # Nginx configuration
+└── supervisor/    # Supervisor configuration
+
+/opt/scripts/
+├── backup/        # Backup scripts
+│   ├── backup_zfs_snapshots.sh
+│   ├── backup_docker_volumes.sh
+│   └── backup_all.sh
+└── operations/    # Operations scripts
+    ├── system_health_check.sh
+    ├── docker_management.sh
+    └── storage_management.sh
 ```
 
-## Hardware Detection ISO
+## Usage Examples
 
-### Features
-- **Automatic hardware detection** on boot
-- **Email reporting** with detailed hardware specifications
-- **Manual detection tools** for interactive use
-- **Minimal footprint** for fast booting
-
-### Hardware Detected
-- **Storage**: NVMe drives, SATA drives, RAID controllers
-- **Network**: Ethernet interfaces, WiFi adapters
-- **CPU**: Model, cores, frequency, cache
-- **Memory**: Total RAM, DIMM configuration
-- **Motherboard**: Manufacturer, model, BIOS version
-- **PCI devices**: Graphics cards, network cards, etc.
-
-### Usage
+### Basic Usage
 ```bash
-# Build the ISO
-sudo ./build_hardware_detection_iso.sh --email admin@example.com
+# Run with default configuration
+sudo bash cloudinit_postinstall.sh -c cloudinit_config.yaml
 
-# Burn to USB
-sudo dd if=output/*.iso of=/dev/sdX bs=4M status=progress
-
-# Boot on target hardware
-# System will automatically detect hardware and send email report
+# Run with verbose output
+sudo bash cloudinit_postinstall.sh -c cloudinit_config.yaml -v
 ```
 
-## Cloud-Init Deployment ISO
+### Post-Installation Operations
 
-### Features
-- **Automated Debian installation** with cloud-init
-- **ZFS storage configuration** with RAID-1 support
-- **Docker and containerization** setup
-- **Dual NIC networking** (WAN + 10Gbit NAS)
-- **Security hardening** with UFW firewall
-- **User management** (admin + workload users)
-- **Supervisor process management**
-
-### Configuration Options
-
-#### SSH Key Configuration
+#### System Health Check
 ```bash
-# Set SSH key for admin user
-sudo ./build_cloud_init_iso.sh --ssh-key ~/.ssh/id_rsa.pub
+/opt/scripts/operations/system_health_check.sh
 ```
 
-#### Workload User Creation
+#### Docker Management
 ```bash
-# Create workload user with custom name
-sudo ./build_cloud_init_iso.sh --workload myapp
+# List all containers, images, and volumes
+/opt/scripts/operations/docker_management.sh list
+
+# Update all Docker images
+/opt/scripts/operations/docker_management.sh update
+
+# Clean up unused Docker resources
+/opt/scripts/operations/docker_management.sh cleanup
 ```
 
-#### Root Password
+#### Storage Management
 ```bash
-# Set root password interactively
-sudo ./build_cloud_init_iso.sh --password
+# Check ZFS pool and dataset status
+/opt/scripts/operations/storage_management.sh status
+
+# Create manual ZFS snapshot
+/opt/scripts/operations/storage_management.sh snapshot
+
+# Clean up old snapshots
+/opt/scripts/operations/storage_management.sh cleanup-snapshots
 ```
 
-### Cloud-Init Templates
-
-The system includes modular cloud-init templates:
-
-- **`base_config.yml`**: Base system configuration
-- **`zfs_config.yml`**: ZFS storage setup
-- **`network_config.yml`**: Network configuration
-- **`docker_config.yml`**: Docker setup
-- **`workload_user_config.yml`**: Workload user creation
-
-### Usage
+#### Backup Operations
 ```bash
-# Build with all features
-sudo ./build_cloud_init_iso.sh \
-  --ssh-key ~/.ssh/id_rsa.pub \
-  --workload myapp \
-  --password \
-  --clean
+# Run daily backup
+/opt/scripts/backup/backup_all.sh daily
 
-# Burn to USB
-sudo dd if=output/*.iso of=/dev/sdX bs=4M status=progress
-
-# Boot on target hardware
-# System will automatically install and configure
-```
-
-## Deployment Workflow
-
-### Stage 1: Hardware Detection
-1. **Build hardware detection ISO**
-2. **Boot on target hardware**
-3. **Receive email report** with hardware specifications
-4. **Review hardware details** for deployment planning
-
-### Stage 2: Server Deployment
-1. **Build cloud-init deployment ISO** with customizations
-2. **Boot on target hardware**
-3. **Automatic installation** and configuration
-4. **SSH access** to deployed server
-
-### Stage 3: Post-Deployment
-1. **Verify deployment** with health checks
-2. **Create workload users** if needed
-3. **Deploy applications** using Docker
-4. **Monitor and maintain** the system
-
-## Configuration Examples
-
-### Basic Deployment
-```bash
-# Hardware detection
-cd deb_cloud_init/1_iso_image_for_hardware_detection/
-sudo ./build_hardware_detection_iso.sh --email admin@example.com
-
-# Server deployment
-cd ../2_iso_image_with_cloud_init/
-sudo ./build_cloud_init_iso.sh --ssh-key ~/.ssh/id_rsa.pub
-```
-
-### Advanced Deployment
-```bash
-# Hardware detection with custom output
-sudo ./build_hardware_detection_iso.sh \
-  --email admin@example.com \
-  --output /mnt/storage/isos \
-  --clean
-
-# Server deployment with all features
-sudo ./build_cloud_init_iso.sh \
-  --ssh-key ~/.ssh/id_rsa.pub \
-  --workload myapp \
-  --password \
-  --output /mnt/storage/isos \
-  --clean \
-  --verbose
+# Backup specific Docker volume
+/opt/scripts/backup/backup_docker_volumes.sh myapp_data
 ```
 
 ## Security Features
 
-### User Management
-- **Admin user**: Full sudo access, SSH key authentication
-- **Workload users**: Limited sudo access, Docker group membership
-- **Root access**: Disabled SSH, available via `sudo su -`
+### SSH Security
+- Key-based authentication only
+- Root login disabled
+- Connection timeouts and limits
+- User restrictions via `AllowUsers`
 
-### Network Security
-- **UFW firewall**: Default deny incoming, allow specific ports
-- **SSH hardening**: Key-based authentication, no password login
-- **Docker security**: Group-based access, no sudo required
+### Firewall Configuration
+- Default deny incoming policy
+- Only essential ports open (SSH, HTTP, HTTPS)
+- UFW-based configuration
 
-### Data Protection
-- **ZFS encryption**: Optional encryption for data pools
-- **Controlled access**: Workload users have limited data access
-- **Audit trail**: Limited sudo access for monitoring
+### User Permissions
+- Non-root users can use Docker without sudo
+- Workload group has limited sudo access
+- Proper file permissions on ZFS datasets
+
+### Monitoring
+- fail2ban protection against brute force attacks
+- logwatch for system monitoring
+- Automated backup verification
+
+## Backup Strategy
+
+### ZFS Snapshots
+- **Daily**: 7 snapshots retained
+- **Weekly**: 4 snapshots retained  
+- **Monthly**: 12 snapshots retained
+- **Location**: Backup pool with timestamped names
+
+### Docker Volume Backups
+- **Frequency**: Before major updates, weekly
+- **Method**: tar.gz archives
+- **Retention**: 30 days
+- **Location**: `/backup/docker-back/`
+
+### Automated Scheduling
+- Daily backups at 2:00 AM
+- Weekly backups at 3:00 AM on Sunday
+- Monthly backups at 4:00 AM on 1st of month
 
 ## Troubleshooting
 
-### Build Issues
+### SSH Access Issues
 ```bash
-# Check prerequisites
-sudo apt-get install live-build live-config live-boot live-tools
+# Check SSH configuration
+sshd -t
 
-# Clean build
-sudo ./build_cloud_init_iso.sh --clean --verbose
+# View SSH logs
+tail -f /var/log/auth.log
 
-# Check logs
-tail -f build.log
+# Restore SSH backup if needed
+cp /etc/ssh/sshd_config.backup.* /etc/ssh/sshd_config
+systemctl reload ssh
 ```
 
-### Deployment Issues
+### Docker Issues
 ```bash
-# Check cloud-init logs
-sudo journalctl -u cloud-init
+# Check Docker status
+systemctl status docker
 
-# Check system status
-sudo systemctl status
-sudo zpool status
-sudo docker info
+# Check Docker daemon configuration
+cat /etc/docker/daemon.json
 
-# Verify network
+# Restart Docker
+systemctl restart docker
+```
+
+### ZFS Issues
+```bash
+# Check ZFS pool status
+zpool status
+
+# Check ZFS datasets
+zfs list
+
+# Check ZFS mount points
+zfs get mountpoint
+```
+
+### Network Issues
+```bash
+# Check network interfaces
 ip addr show
-sudo ufw status
+
+# Check network configuration
+cat /etc/network/interfaces.d/*
+
+# Restart networking
+systemctl restart networking
 ```
 
-### Hardware Detection Issues
-```bash
-# Manual hardware detection
-/usr/local/bin/hardware_detect.sh
+## Extending the Configuration
 
-# Check email configuration
-/usr/local/bin/email_config.sh
+### Adding More Users
+```yaml
+users:
+  - name: existinguser
+    ssh_authorized_keys:
+      - "ssh-key..."
+    sudo: true
+  - name: newuser
+    ssh_authorized_keys:
+      - "ssh-key..."
+    sudo: false
+```
 
-# View detection logs
-tail -f /var/log/hardware_detect.log
+### Adding More ZFS Pools
+```yaml
+zfs:
+  pool_name: data
+  mode: mirror
+  devices:
+    - /dev/nvme0n1
+    - /dev/nvme1n1
+  # Add additional pools as needed
+```
+
+### Custom Backup Retention
+```yaml
+backup:
+  zfs_snapshots:
+    daily_retention: 14    # Keep 14 daily snapshots
+    weekly_retention: 8    # Keep 8 weekly snapshots
+    monthly_retention: 24  # Keep 24 monthly snapshots
 ```
 
 ## Requirements
 
-### Build Environment
-- **Debian/Ubuntu** system
-- **Root privileges** for ISO building
-- **Live build tools** (automatically installed)
-- **Internet connection** for package downloads
+### Hardware Requirements
+- **CPU**: x86_64 architecture
+- **RAM**: Minimum 4GB (8GB recommended)
+- **Storage**: At least 2 drives for ZFS mirror
+- **Network**: At least 1 network interface
 
-### Target Hardware
-- **x86_64** architecture
-- **UEFI boot** support (recommended)
-- **Network connectivity** for email reporting
-- **Minimum 4GB RAM** for deployment
+### Software Requirements
+- **OS**: Debian 12 (Bookworm)
+- **Boot**: UEFI or legacy BIOS
+- **Network**: Internet connectivity for package installation
+
+### Prerequisites
+- Manual Debian 12 installation completed
+- Root access to the system
+- SSH keys for user authentication
+- Knowledge of network configuration
 
 ## Support
 
 For issues and questions:
-1. Check the individual README files in each directory
-2. Review build logs for error messages
-3. Verify prerequisites and system requirements
+1. Check the script output for error messages
+2. Review system logs: `/var/log/syslog`, `/var/log/auth.log`
+3. Verify configuration file syntax with `yq eval` command
 4. Test with minimal configuration first
+5. Ensure SSH key access before running SSH hardening
 
 ## License
 

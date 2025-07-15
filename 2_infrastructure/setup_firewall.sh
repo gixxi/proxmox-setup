@@ -60,12 +60,14 @@ print_status "Configuring SSH access from specified IPs..."
 iptables -A INPUT -p tcp --dport 22 -s 116.203.216.1 -j ACCEPT
 iptables -A INPUT -p tcp --dport 22 -s 5.161.184.133 -j ACCEPT
 iptables -A INPUT -p tcp --dport 22 -s 192.168.3.0/24 -j ACCEPT
+iptables -A INPUT -p tcp --dport 22 -s 192.168.1.0/24 -j ACCEPT
 
 # Allow MOSH (UDP port 60000-61000) from specified IPs
 print_status "Configuring MOSH access from specified IPs..."
 iptables -A INPUT -p udp --dport 60000:61000 -s 116.203.216.1 -j ACCEPT
 iptables -A INPUT -p udp --dport 60000:61000 -s 5.161.184.133 -j ACCEPT
 iptables -A INPUT -p udp --dport 60000:61000 -s 192.168.3.0/24 -j ACCEPT
+iptables -A INPUT -p udp --dport 60000:61000 -s 192.168.1.0/24 -j ACCEPT
 
 # Allow HTTP traffic (ports 80 and 443)
 print_status "Configuring HTTP/HTTPS access..."

@@ -1,0 +1,80 @@
+# Cloud-Init Post-Install Configuration
+# This file configures the post-install script for Debian 12
+
+users:
+  - name: myapp
+    ssh_authorized_keys:
+      - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... user@host"
+    sudo: true
+  - name: anotheruser
+    ssh_authorized_keys:
+      - "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC... user2@host"
+    sudo: false
+
+zfs:
+  pool_name: data
+  mode: mirror
+  devices:
+    - /dev/nvme0n1
+    - /dev/nvme1n1
+
+network:
+  interfaces:
+    - name: enp1s0
+      address: 192.168.1.100/24
+      gateway: 192.168.1.1
+      dns:
+        - 1.1.1.1
+        - 8.8.8.8
+    - name: enp2s0
+      dhcp: true
+
+# Docker configuration
+docker:
+  data_root: /data/docker
+  storage_driver: overlay2
+  log_max_size: 10m
+  log_max_files: 3
+
+# Backup configuration
+backup:
+  zfs_snapshots:
+    daily_retention: 7
+    weekly_retention: 4
+    monthly_retention: 12
+  docker_volumes:
+    retention_days: 30
+  schedule:
+    daily_time: "02:00"
+    weekly_time: "03:00"
+    monthly_time: "04:00"
+
+# Monitoring configuration
+monitoring:
+  fail2ban:
+    enabled: true
+    bantime: 3600
+    findtime: 600
+    maxretry: 3
+  logwatch:
+    enabled: true
+    output: mail
+    detail: Low
+
+# Firewall configuration
+firewall:
+  allow_ports:
+    - 22    # SSH
+    - 80    # HTTP
+    - 443   # HTTPS
+  default_policy: deny_incoming
+
+# Optional cloud-init configuration
+cloud_init:
+  # Add any additional cloud-init configuration here
+  # This will be applied to /etc/cloud/cloud.cfg.d/99-custom.cfg
+  # Example:
+  # system_info:
+  #   default_user:
+  #     name: myapp
+  #     groups: [workload, docker] 
