@@ -94,7 +94,7 @@ fi
 # 2. Download Debian Cloud Image if necessary
 echo "INFO: Checking for Debian cloud image..."
 if [ ! -f "${DOWNLOAD_PATH}" ]; then
-  echo "INFO: Downloading Debian cloud image to ${DOWNLOAD_PATH}..."
+  echo "INFO: Debian cloud image not found locally. Downloading to ${DOWNLOAD_PATH}..."
   wget -q --show-progress -O "${DOWNLOAD_PATH}" "${DEBIAN_IMAGE_URL}"
   if [ $? -ne 0 ]; then
       echo "ERROR: Failed to download Debian image."
@@ -102,7 +102,8 @@ if [ ! -f "${DOWNLOAD_PATH}" ]; then
   fi
   echo "INFO: Download complete."
 else
-  echo "INFO: Debian cloud image already exists locally."
+  echo "INFO: Debian cloud image already exists locally at ${DOWNLOAD_PATH}"
+  echo "INFO: Skipping download to save time and bandwidth."
 fi
 
 # 3. Create the VM
@@ -242,6 +243,9 @@ if [ \$? -ne 0 ]; then echo "WARNING: apt update/upgrade failed."; fi
 echo "INFO: Installing base packages including nginx and ufw..."
 apt-get install -y docker.io supervisor emacs vim nano curl wget parted gdisk mosh nginx ufw zsh tmux make
 if [ \$? -ne 0 ]; then echo "WARNING: apt install failed."; fi
+
+# Mask systemd-networkd-wait-online.service to prevent network wait delays
+systemctl mask systemd-networkd-wait-online.service || true
 
 # Restart Docker to apply new configuration
 systemctl restart docker
