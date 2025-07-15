@@ -35,8 +35,6 @@ FULL_SERVER_NAME="${SUBDOMAIN}.${DOMAIN}"
 
 # Define remote paths
 REMOTE_SERVER_CONF="/etc/nginx/sites-enabled/${FULL_SERVER_NAME}.conf" # Use FQDN for server conf
-REMOTE_LOCATION_DIR="/etc/nginx/sites-enabled/locations"
-REMOTE_LOCATION_CONF="${REMOTE_LOCATION_DIR}/${SUBDOMAIN}.location.conf" # Keep location conf based on subdomain only
 REMOTE_SSL_CERT="/etc/nginx/ssl/proxmox.crt" # Assumes cert copied by copy_ssl_to_bastian.sh
 REMOTE_SSL_KEY="/etc/nginx/ssl/proxmox.key"   # Assumes key copied by copy_ssl_to_bastian.sh
 
@@ -135,55 +133,42 @@ server {
 
         proxy_http_version 1.1; # Recommended for keepalive, etc.
     }
+
+    # Location block for /${SUBDOMAIN}/ (alternative access path)
+    location /${SUBDOMAIN}/ {
+        # Rewrite the request path before proxying (remove leading /<subdomain>)
+        # Example: /subdomain/foo -> /foo
+        rewrite ^/${SUBDOMAIN}(/.*)$ \\\$1 break; # Escaped $ for Nginx variable
+
+        proxy_pass http://${APP_IP}:${APP_PORT}/; # Pass to the root of the app
+
+        # Redirect Location headers from the backend app if they don't include the prefix
+        # This helps fix redirects within the app when accessed via path
+        proxy_redirect ~^/(.*)$ /${SUBDOMAIN}/\\\$1; # Escaped $ for Nginx variable
+
+        proxy_set_header Host \\\$host; # Escaped $ for Nginx variable
+        proxy_set_header X-Real-IP \\\$remote_addr; # Escaped $ for Nginx variable
+        proxy_set_header X-Forwarded-For \\\$proxy_add_x_forwarded_for; # Escaped $ for Nginx variable
+        proxy_set_header X-Forwarded-Proto \\\$scheme; # Escaped $ for Nginx variable
+        proxy_set_header X-Script-Name /${SUBDOMAIN}; # Inform app about base path
+
+        # WebSocket support
+        proxy_set_header Upgrade \\\$http_upgrade; # Escaped $ for Nginx variable
+        proxy_set_header Connection "upgrade";
+
+        # Timeouts
+        proxy_connect_timeout 60s;
+        proxy_send_timeout   60s;
+        proxy_read_timeout   86400;
+
+        proxy_http_version 1.1;
+    }
 }
 VHOST_EOF
 echo "INFO: Server block file created."
 
-# --- Create Location Block ---
-echo "INFO: Creating location block file: ${REMOTE_LOCATION_CONF}"
-# Ensure the locations directory exists
-mkdir -p "${REMOTE_LOCATION_DIR}"
-
-# Use cat and HERE document to write the config file
-# Variables like \${SUBDOMAIN}, \${APP_IP}, \${APP_PORT} expanded by remote shell.
-# Nginx variables like \$1, \$host etc. need escaping (\$).
-cat > "${REMOTE_LOCATION_CONF}" << LOCATION_EOF
-# Location block for /${SUBDOMAIN}/
-# Managed by create_nginx_proxy_configuration.sh
-
-location /${SUBDOMAIN}/ {
-    # Rewrite the request path before proxying (remove leading /<subdomain>)
-    # Example: /subdomain/foo -> /foo
-    rewrite ^/${SUBDOMAIN}(/.*)$ \\\$1 break; # Escaped $ for Nginx variable
-
-    # Alternative rewrite if app expects /subdomain/ prefix:
-    # No rewrite needed, just proxy_pass
-
-    proxy_pass http://${APP_IP}:${APP_PORT}/; # Pass to the root of the app
-
-    # Redirect Location headers from the backend app if they don't include the prefix
-    # This helps fix redirects within the app when accessed via path
-    proxy_redirect ~^/(.*)$ /${SUBDOMAIN}/\\\$1; # Escaped $ for Nginx variable
-
-    proxy_set_header Host \\\$host; # Escaped $ for Nginx variable
-    proxy_set_header X-Real-IP \\\$remote_addr; # Escaped $ for Nginx variable
-    proxy_set_header X-Forwarded-For \\\$proxy_add_x_forwarded_for; # Escaped $ for Nginx variable
-    proxy_set_header X-Forwarded-Proto \\\$scheme; # Escaped $ for Nginx variable
-    proxy_set_header X-Script-Name /${SUBDOMAIN}; # Inform app about base path
-
-    # WebSocket support
-    proxy_set_header Upgrade \\\$http_upgrade; # Escaped $ for Nginx variable
-    proxy_set_header Connection "upgrade";
-
-    # Timeouts
-    proxy_connect_timeout 60s;
-    proxy_send_timeout   60s;
-    proxy_read_timeout   86400;
-
-    proxy_http_version 1.1;
-}
-LOCATION_EOF
-echo "INFO: Location block file created."
+# Location block is now included directly in the server block above
+echo "INFO: Location block for /${SUBDOMAIN}/ included in server block."
 
 # --- Test and Reload Nginx ---
 echo "INFO: Testing Nginx configuration..."
@@ -193,12 +178,11 @@ if nginx -t; then
     systemctl reload nginx
     echo "INFO: Nginx reloaded successfully."
 else
-    echo "ERROR: Nginx configuration test failed. Please check the files:"
+    echo "ERROR: Nginx configuration test failed. Please check the file:"
     echo "  - ${REMOTE_SERVER_CONF}"
-    echo "  - ${REMOTE_LOCATION_CONF}"
     echo "  Nginx was NOT reloaded."
-    # Optional: remove the created files on failure?
-    # rm -f "${REMOTE_SERVER_CONF}" "${REMOTE_LOCATION_CONF}"
+    # Optional: remove the created file on failure?
+    # rm -f "${REMOTE_SERVER_CONF}"
     exit 1 # Exit the remote script with an error
 fi
 
