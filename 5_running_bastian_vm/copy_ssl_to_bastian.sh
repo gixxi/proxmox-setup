@@ -4,7 +4,12 @@
 
 BASTIAN_IP=$1
 BASTIAN_USER="root"
-NODE_NAME="hub100" # Or dynamically get with "hostname" if running on the node
+# Get hostname or exit with error
+if ! NODE_NAME=$(hostname); then
+    echo "Error: Failed to get hostname" 
+    exit 1
+fi
+
 CERT_PATH="/etc/pve/nodes/${NODE_NAME}/pveproxy-ssl.pem"
 KEY_PATH="/etc/pve/nodes/${NODE_NAME}/pveproxy-ssl.key"
 REMOTE_CERT_PATH="/etc/nginx/ssl/proxmox.crt"
