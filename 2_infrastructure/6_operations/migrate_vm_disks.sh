@@ -73,7 +73,7 @@ check_storage_exists
 echo "VM ID: $vm_id"
 echo "Target Storage: $target_storage"
 echo ""
-
+ 
 # Get disk information
 echo "Found disks in VM configuration:"
 echo "--------------------------------"
