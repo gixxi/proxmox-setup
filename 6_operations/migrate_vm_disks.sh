@@ -51,8 +51,7 @@ migrate_disk() {
     local filename=$3
     
     echo "Migrating $disk_id from $current_storage to $target_storage..."
-    
-    if qm move disk "$vm_id" "$disk_id" "$target_storage" --delete 1; then
+    if qm disk move "$vm_id" "$disk_id" "$target_storage" --delete 1; then
         echo "Successfully migrated $disk_id to $target_storage"
     else
         echo "Error: Failed to migrate $disk_id"
