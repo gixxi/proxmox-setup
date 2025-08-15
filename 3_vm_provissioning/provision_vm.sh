@@ -1,25 +1,141 @@
 #!/bin/bash
 # VM Provisioning Script for Proxmox
-# Usage: ./provision_vm.sh <vm_name> <ip_address> <ci_user> <ci_password> [memory in MB] [cpu] [disk in GB] [vm_id]
-# Memory defaults to 2048 MB (2 GB), CPU to 2 cores, System Disk (DISK) to 10 GB.
-# Creates only the primary system disk.
+# Usage: ./provision_vm.sh --vm-name <name> --ip <address> --user <user> --password <password> [options]
+# Example: ./provision_vm.sh --vm-name myvm --ip 192.168.3.100 --user admin --password mypass --memory 4096 --cpu 4
+#
+# Mandatory parameters:
+#   --vm-name, -n     : VM name
+#   --ip, -i          : IP address
+#   --user, -u        : Cloud-init user
+#   --password, -p    : Cloud-init password
+#
+# Optional parameters:
+#   --memory, -m      : Memory in MB (default: 2048)
+#   --cpu, -c         : CPU cores (default: 2)
+#   --disk, -d        : Disk size in GB (default: 10)
+#   --vm-id           : VM ID (default: auto-assigned)
+#   --storage, -s     : Proxmox storage ID (default: proxmox_data)
+#   --bridge, -b      : Network bridge (default: vmbr0)
+#   --gateway, -g     : Network gateway (default: 192.168.3.1)
+#   --ssh-key         : SSH public key path (default: /root/.ssh/id_rsa.pub)
+#   --timezone, -t    : Timezone (default: Europe/Zurich)
+#   --help, -h        : Show this help message
 
-# --- Configuration ---
-VM_NAME=$1
-IP_ADDRESS=$2
-CI_USER=$3               # Cloud-init user (Mandatory)
-CI_PASSWORD=$4           # Cloud-init password (Mandatory)
-# Set default values for optional parameters
-MEMORY=${5:-2048}         # Default system memory to 2 GB
-CPU=${6:-2}               # Default CPU cores to 2
-DISK=${7:-10}             # Default system disk size to 10 GB
-VM_ID=${8:-}              # VM ID (optional)
-STORAGE=${9:-proxmox_data}    # Proxmox storage ID
-BRIDGE="vmbr0"            # Proxmox network bridge
-# Use GATEWAY from environment if set, otherwise use default
-GATEWAY="${GATEWAY:-192.168.3.1}"    # Network gateway (matches Proxmox host network)
-SSH_PUB_KEY_PATH="/root/.ssh/id_rsa.pub" # Path to SSH public key for cloud-init
-TIMEZONE="Europe/Zurich"  # Timezone for the VM
+# --- Default Configuration ---
+# Set default values
+MEMORY=2048
+CPU=2
+DISK=10
+VM_ID=""
+STORAGE="proxmox_data"
+BRIDGE="vmbr0"
+GATEWAY="192.168.3.1"
+SSH_PUB_KEY_PATH="/root/.ssh/id_rsa.pub"
+TIMEZONE="Europe/Zurich"
+
+# Mandatory parameters (will be validated)
+VM_NAME=""
+IP_ADDRESS=""
+CI_USER=""
+CI_PASSWORD=""
+
+# Function to show usage
+show_usage() {
+    echo "Usage: $0 --vm-name <name> --ip <address> --user <user> --password <password> [options]"
+    echo ""
+    echo "Mandatory parameters:"
+    echo "  --vm-name, -n     VM name"
+    echo "  --ip, -i          IP address"
+    echo "  --user, -u        Cloud-init user"
+    echo "  --password, -p    Cloud-init password"
+    echo ""
+    echo "Optional parameters:"
+    echo "  --memory, -m      Memory in MB (default: $MEMORY)"
+    echo "  --cpu, -c         CPU cores (default: $CPU)"
+    echo "  --disk, -d        Disk size in GB (default: $DISK)"
+    echo "  --vm-id           VM ID (default: auto-assigned)"
+    echo "  --storage, -s     Proxmox storage ID (default: $STORAGE)"
+    echo "  --bridge, -b      Network bridge (default: $BRIDGE)"
+    echo "  --gateway, -g     Network gateway (default: $GATEWAY)"
+    echo "  --ssh-key         SSH public key path (default: $SSH_PUB_KEY_PATH)"
+    echo "  --timezone, -t    Timezone (default: $TIMEZONE)"
+    echo "  --help, -h        Show this help message"
+    echo ""
+    echo "Examples:"
+    echo "  $0 --vm-name web01 --ip 192.168.3.100 --user admin --password mypass"
+    echo "  $0 -n db01 -i 192.168.3.101 -u dbuser -p dbpass -m 4096 -c 4 -d 20"
+    echo "  $0 --vm-name app01 --ip 192.168.3.102 --user appuser --password apppass --gateway 192.168.3.254"
+}
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --vm-name|-n)
+            VM_NAME="$2"
+            shift 2
+            ;;
+        --ip|-i)
+            IP_ADDRESS="$2"
+            shift 2
+            ;;
+        --user|-u)
+            CI_USER="$2"
+            shift 2
+            ;;
+        --password|-p)
+            CI_PASSWORD="$2"
+            shift 2
+            ;;
+        --memory|-m)
+            MEMORY="$2"
+            shift 2
+            ;;
+        --cpu|-c)
+            CPU="$2"
+            shift 2
+            ;;
+        --disk|-d)
+            DISK="$2"
+            shift 2
+            ;;
+        --vm-id)
+            VM_ID="$2"
+            shift 2
+            ;;
+        --storage|-s)
+            STORAGE="$2"
+            shift 2
+            ;;
+        --bridge|-b)
+            BRIDGE="$2"
+            shift 2
+            ;;
+        --gateway|-g)
+            GATEWAY="$2"
+            shift 2
+            ;;
+        --ssh-key)
+            SSH_PUB_KEY_PATH="$2"
+            shift 2
+            ;;
+        --timezone|-t)
+            TIMEZONE="$2"
+            shift 2
+            ;;
+        --help|-h)
+            show_usage
+            exit 0
+            ;;
+        *)
+            echo "Error: Unknown parameter '$1'"
+            echo "Use --help or -h for usage information"
+            exit 1
+            ;;
+    esac
+done
+
+# Override with environment variables if they exist
+GATEWAY="${GATEWAY_ENV:-$GATEWAY}"    # Allow environment override
 
 # Specific Debian image URL and name
 DEBIAN_IMAGE_URL="https://cloud.debian.org/images/cloud/bookworm/20250416-2084/debian-12-generic-amd64-20250416-2084.qcow2"
@@ -27,9 +143,37 @@ IMAGE_NAME="debian-12-generic-amd64-20250416-2084.qcow2"
 DOWNLOAD_PATH="/tmp/${IMAGE_NAME}" # Local path to download the image
 
 # --- Parameter Validation ---
+# Check for mandatory parameters
 if [ -z "$VM_NAME" ] || [ -z "$IP_ADDRESS" ] || [ -z "$CI_USER" ] || [ -z "$CI_PASSWORD" ]; then
   echo "Error: Missing mandatory parameters"
-  echo "Usage: $0 <VM_NAME> <ip_address> <ci_user> <ci_password> [memory in MB] [cpu] [disk in GB] [vm_id] [storage]"
+  echo ""
+  if [ -z "$VM_NAME" ]; then echo "  Missing: --vm-name"; fi
+  if [ -z "$IP_ADDRESS" ]; then echo "  Missing: --ip"; fi
+  if [ -z "$CI_USER" ]; then echo "  Missing: --user"; fi
+  if [ -z "$CI_PASSWORD" ]; then echo "  Missing: --password"; fi
+  echo ""
+  echo "Use --help or -h for usage information"
+  exit 1
+fi
+
+# Validate numeric parameters
+if ! [[ "$MEMORY" =~ ^[0-9]+$ ]]; then
+  echo "Error: Memory must be a positive integer (MB): $MEMORY"
+  exit 1
+fi
+
+if ! [[ "$CPU" =~ ^[0-9]+$ ]]; then
+  echo "Error: CPU must be a positive integer: $CPU"
+  exit 1
+fi
+
+if ! [[ "$DISK" =~ ^[0-9]+$ ]]; then
+  echo "Error: Disk size must be a positive integer (GB): $DISK"
+  exit 1
+fi
+
+if [ -n "$VM_ID" ] && ! [[ "$VM_ID" =~ ^[0-9]+$ ]]; then
+  echo "Error: VM ID must be a positive integer: $VM_ID"
   exit 1
 fi
 
@@ -42,6 +186,25 @@ if [ ! -f "$SSH_PUB_KEY_PATH" ]; then
     echo "Error: SSH public key not found at $SSH_PUB_KEY_PATH"
     exit 1
 fi
+
+# Display parsed configuration
+echo "=================================================="
+echo " VM PROVISIONING CONFIGURATION"
+echo "=================================================="
+echo " VM Name:        $VM_NAME"
+echo " IP Address:     $IP_ADDRESS"
+echo " Gateway:        $GATEWAY"
+echo " Memory:         $MEMORY MB"
+echo " CPU Cores:      $CPU"
+echo " Disk Size:      ${DISK}GB"
+echo " VM ID:          ${VM_ID:-auto-assigned}"
+echo " Storage:        $STORAGE"
+echo " Bridge:         $BRIDGE"
+echo " Timezone:       $TIMEZONE"
+echo " SSH User:       $CI_USER"
+echo " SSH Key Path:   $SSH_PUB_KEY_PATH"
+echo "=================================================="
+echo ""
 
 # Validate and sanitize VM name for Proxmox DNS compatibility
 # Proxmox requires VM names to be valid DNS names (letters, numbers, hyphens only)
@@ -198,8 +361,8 @@ echo "INFO: Configuring Cloud-Init..."
 qm set $VM_ID --citype nocloud
 # Configure IP, gateway, and DNS servers
 qm set $VM_ID --ipconfig0 "ip=${IP_ADDRESS}/24,gw=${GATEWAY},ip6=auto"
-# Set DNS servers (primary: router, secondary: Google DNS, tertiary: Cloudflare)
-qm set $VM_ID --nameserver "192.168.3.1 8.8.8.8 1.1.1.1"
+# Set DNS servers (primary: Google DNS, secondary: Cloudflare)
+qm set $VM_ID --nameserver "8.8.8.8 1.1.1.1"
 qm set $VM_ID --ciuser "${CI_USER}"
 qm set $VM_ID --cipassword "${CI_PASSWORD}"
 qm set $VM_ID --sshkeys "${SSH_PUB_KEY_PATH}"
@@ -479,21 +642,35 @@ fi
 echo "=================================================="
 echo " VM PROVISIONING COMPLETE"
 echo "=================================================="
-echo " VM ID:        $VM_ID"
-echo " Name:         $VM_NAME"
-echo " VM_NAME:      $VM_NAME"
-echo " IP Address:   $IP_ADDRESS"
-echo " Memory:       $MEMORY MB"
-echo " CPU Cores:    $CPU"
-echo " System Disk:  ${DISK}G (scsi0)"
-# echo " Data Disk:    ${DATA_DISK_SIZE}G (scsi1)" # Removed
-echo " SSH User:     $CI_USER (Password: $CI_PASSWORD)"
-echo " SSH PubKey:   $SSH_PUB_KEY_PATH"
+echo " VM ID:          $VM_ID"
+echo " Name:           $VM_NAME"
+echo " IP Address:     $IP_ADDRESS"
+echo " Gateway:        $GATEWAY"
+echo " Memory:         $MEMORY MB"
+echo " CPU Cores:      $CPU"
+echo " System Disk:    ${DISK}G (scsi0)"
+echo " Storage:        $STORAGE"
+echo " Bridge:         $BRIDGE"
+echo " Timezone:       $TIMEZONE"
+echo " SSH User:       $CI_USER"
+echo " SSH Password:   $CI_PASSWORD"
+echo " SSH PubKey:     $SSH_PUB_KEY_PATH"
 echo "=================================================="
+echo ""
 echo "INFO: Waiting a bit for VM to boot and apply cloud-init..."
 sleep 45 # Adjust as needed
-echo "INFO: VM should now be accessible at ssh ${CI_USER}@${IP_ADDRESS}"
-echo "INFO: Check cloud-init logs in /var/log/cloud-init-output.log inside the VM for details."
+echo ""
+echo "CONNECTION INFO:"
+echo "  SSH:    ssh ${CI_USER}@${IP_ADDRESS}"
+echo "  Root:   ssh root@${IP_ADDRESS}  (password: *****)"
+echo "  HTTP:   http://${IP_ADDRESS}"
+echo "  HTTPS:  https://${IP_ADDRESS}"
+echo ""
+echo "NEXT STEPS:"
+echo "  1. Check cloud-init logs: /var/log/cloud-init-output.log"
+echo "  2. Verify services: systemctl status nginx docker"
+echo "  3. Check firewall: ufw status verbose"
+echo "=================================================="
 
 # Optional: Clean up the downloaded image if desired
 # echo "INFO: Cleaning up downloaded image ${DOWNLOAD_PATH}..."
