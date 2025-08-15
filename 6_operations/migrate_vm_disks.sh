@@ -1,14 +1,20 @@
 #!/bin/bash
 
 # Check if the correct number of arguments are provided
-if [ $# -ne 2 ]; then
-    echo "Usage: $0 <vm_id> <target_storage>"
+if [ $# -ne 3 ]; then
+    echo "Usage: $0 <vm_id> <target_storage> <suspend_vm>"
     exit 1
 fi
 
 vm_id=$1
 target_storage=$2
+suspend_vm=$3
 
+if [ "$suspend_vm" = "true" ]; then
+    suspend_vm=true
+else
+    suspend_vm=false
+fi
 # Function to check if VM exists
 check_vm_exists() {
     if ! qm config "$vm_id" >/dev/null 2>&1; then
@@ -106,7 +112,7 @@ fi
 
 # Suspend VM if running
 vm_status=$(qm status "$vm_id" 2>/dev/null | grep -o 'status:.*' | cut -d: -f2 | tr -d ' ')
-if [ "$vm_status" = "running" ]; then
+if [ "$vm_status" = "running" ] && [ "$suspend_vm" = true ]; then
     echo "Suspending VM $vm_id..."
     qm suspend "$vm_id"
     echo "Waiting for VM to suspend..."
@@ -132,7 +138,9 @@ done < <(get_disk_info)
 
 if [ "$migration_success" = true ]; then
     echo "All disks migrated successfully!"
-    echo "You can now resume the VM with: qm resume $vm_id"
+    if [ "$vm_status" = "running" ] && [ "$suspend_vm" = true ]; then
+        echo "You can now resume the VM with: qm resume $vm_id"
+    fi
 else
     echo "Some disks failed to migrate. Please check the errors above."
     exit 1

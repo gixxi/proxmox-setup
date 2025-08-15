@@ -23,95 +23,25 @@ if [ "$TYPE" == "app" ]; then
     # need to be created in the home directory
     ssh root@$IP "ln -sf /var/vlic/rocklog-vlic-docker/vlic_runner vlic_runner"
     
-    # Create Makefile using a different approach
-    if [ -n "$CIRCLECI_APIKEY" ]; then
-        cat > /tmp/makefile_content << EOF
-CIRCLECI_APIKEY := $CIRCLECI_APIKEY
-EOF
+    # Create and deploy Makefile using the dedicated script
+    echo "Deploying Makefile with memory management features..."
+    SCRIPT_DIR="$(dirname "$0")"
+    if [ -f "$SCRIPT_DIR/create_makefile.sh" ]; then
+        "$SCRIPT_DIR/create_makefile.sh" "$IP" "$CIRCLECI_APIKEY"
     else
-        cat > /tmp/makefile_content << 'EOF'
-CIRCLECI_APIKEY := <circleci api key, ask the team for the key>
-EOF
+        echo "ERROR: create_makefile.sh not found in $SCRIPT_DIR"
+        echo "Please ensure create_makefile.sh is in the same directory as restrict.sh"
+        exit 1
     fi
-    
-    # Append the rest of the Makefile content
-    cat >> /tmp/makefile_content << 'EOF'
-VERSION := v12
-current_dir := $(shell pwd)
-
-ifndef VLIC_PORT
-	VLIC_PORT := 8080
-endif
-
-ifndef COUCHDB_PORT
-	COUCHDB_PORT := 5984
-endif
-
-ifndef CORES
-	CORES := 4
-endif
-
-ifndef Xmx
-	Xmx := 4g
-endif
-
-
-JAVA_HEAP=$(Xmx)
-HEAP_NUM=$(JAVA_HEAP:g=)
-DOCKER_MEMORY=$(shell echo $$(( $(HEAP_NUM) + 2 ))g)
-
-ifndef IMAGE
-	IMAGE := hub5.planet-rocklog.com:5000/vlic/vlic_runner:$(VERSION)
-endif
-
-
-ifndef CONT_NAME
-	CONT_NAME := $(shell date +%s | sha256sum | base64 | head -c 32)
-endif
-
-build:
-	docker build -t vlic/vlic_runner:${VERSION} .
-	docker tag vlic/vlic_runner:${VERSION} hub5.planet-rocklog.com:5000/vlic/vlic_runner:${VERSION}
-deploy:
-	sudo docker push hub5.planet-rocklog.com:5000/vlic/vlic_runner:${VERSION}
-
-persist:
-	-mkdir $(CONT_NAME)
-	-mkdir $(CONT_NAME)/data
-	-mkdir $(CONT_NAME)/tmp
-	-mkdir $(CONT_NAME)/tmp/vlic
-	-mkdir $(CONT_NAME)/log
-	-mkdir $(CONT_NAME)/log/evictor
-
-extract: persist
-	test -f rocklog-vlic-$(BUILD).tar.gz || curl -H "Circle-Token: $(CIRCLECI_APIKEY)" https://circleci.com/api/v1.1/project/github/lambdaroyal/rocklog-vlic/$(BUILD)/artifacts | grep -o 'https://[^"]*' | wget --verbose --header "Circle-Token: $(CIRCLECI_APIKEY)" --input-file -
-	-cp rocklog-vlic.tar.gz rocklog-vlic-$(BUILD).tar.gz 
-	-cp rocklog-vlic-$(BUILD).tar.gz $(CONT_NAME)/tmp/vlic/rocklog-vlic.tar.gz
-	-rm rocklog-vlic.tar.gz
-
-bash: persist
-	echo "Starting bash in new container"
-	sudo docker run -e LANG=C.UTF-8 -e LC_ALL=C.UTF-8 --name=$(CONT_NAME) -it --restart='always' -p $(COUCHDB_PORT):5984 -p 5987:5986 -p $(VLIC_PORT):8080 -v $(current_dir)/$(CONT_NAME)/data:/data -v $(current_dir)/$(CONT_NAME)/tmp/vlic:/tmp/vlic -v $(current_dir)/$(CONT_NAME)/log ${IMAGE} bash
-
-couchdb: persist
-	echo "Starting bash in new container"
-	sudo docker run -e LANG=C.UTF-8 -e LC_ALL=C.UTF-8 --name=$(CONT_NAME) -it -p $(COUCHDB_PORT):5984 -p $(VLIC_PORT):8080 -v $(current_dir)/$(CONT_NAME)/data:/data -v $(current_dir)/$(CONT_NAME)/tmp/vlic:/tmp/vlic -v $(current_dir)/$(CONT_NAME)/log ${IMAGE} couchdb bash
-
-64bit: extract
-	echo "Building container with unique data dir $(CONT_NAME) with archive $(ARCHIVE) for customer data, image=$(IMAGE) -Xmx=$(Xmx) cores=$(CORES)"
-	-sudo docker rm -f $(CONT_NAME)
-	sudo docker run -e LANG=C.UTF-8 -e LC_ALL=C.UTF-8 --rm --name=$(CONT_NAME) -p $(VLIC_PORT):8080 -p 1$(VLIC_PORT):4050 -p 2$(VLIC_PORT):5984 -v $(current_dir)/$(CONT_NAME)/.ssh:/.ssh -v $(current_dir)/$(CONT_NAME)/data:/data -v $(current_dir)/$(CONT_NAME)/tmp/vlic:/tmp/vlic -v $(current_dir)/$(CONT_NAME)/log:/usr/local/var/log/couchdb/ -v $(current_dir)/$(CONT_NAME)/log/evictor:/log -v /etc/localtime:/etc/localtime:ro --cpus="$(CORES)" --log-driver=local --memory=$(DOCKER_MEMORY) $(IMAGE) couchdb 64bit $(Xmx)
-EOF
-
-    scp /tmp/makefile_content root@$IP:/var/vlic/rocklog-vlic-docker/vlic_runner/Makefile
-    rm /tmp/makefile_content
     
     # Create supervisor template using a different approach
     cat > /tmp/supervisor_template << 'EOF'
 [program:CUSTOMER_NAME]
 ; 2023-12-11 3883 <-- we use this for versioning
 ; 2025-03-13 4858
-command=make 64bit BUILD=4858 CONT_NAME=CUSTOMER_NAME VLIC_PORT=8080 IMAGE=hub5.planet-rocklog.com:5000/vlic/vlic_runner:v12 CORES=2 Xmx=5g
+; Memory optimization: ENABLE_SWAP=true allows container to use swap when under pressure
+; MEMORY_RESERVATION_GB auto-calculated as Xmx+2GB, SWAPPINESS=10 minimizes swap usage
+command=make 64bit BUILD=4858 CONT_NAME=CUSTOMER_NAME VLIC_PORT=8080 IMAGE=hub5.planet-rocklog.com:5000/vlic/vlic_runner:v12 CORES=2 Xmx=5g ENABLE_SWAP=true SWAPPINESS=10
 directory=/var/vlic/rocklog-vlic-docker/vlic_runner
 user=root
 autostart=true
