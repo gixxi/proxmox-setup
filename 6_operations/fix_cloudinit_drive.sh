@@ -79,6 +79,27 @@ if [ "$CLOUDINIT_ON_IDE1" -eq 1 ]; then
         exit 1
     fi
     
+    # Check if there's a custom script reference that might cause issues
+    CICUSTOM_REF=$(qm config $VM_ID | grep "^cicustom:")
+    if [ -n "$CICUSTOM_REF" ]; then
+        echo "INFO: Found custom cloud-init script reference: $CICUSTOM_REF"
+        # Extract script name to check if it exists
+        SCRIPT_NAME=$(echo "$CICUSTOM_REF" | sed 's/.*user=local:snippets\///g' | cut -d, -f1)
+        if [ -n "$SCRIPT_NAME" ]; then
+            SCRIPT_PATH="/var/lib/vz/snippets/$SCRIPT_NAME"
+            if [ ! -f "$SCRIPT_PATH" ]; then
+                echo "WARNING: Custom script $SCRIPT_PATH does not exist!"
+                echo "INFO: Removing custom script reference to avoid errors..."
+                qm set $VM_ID --delete cicustom
+                if [ $? -eq 0 ]; then
+                    echo "INFO: Custom script reference removed successfully."
+                else
+                    echo "WARNING: Failed to remove custom script reference."
+                fi
+            fi
+        fi
+    fi
+
     # Add cloud-init drive to ide2
     echo "INFO: Adding cloud-init drive to ide2..."
     qm set $VM_ID --ide2 ${STORAGE}:cloudinit
@@ -111,6 +132,27 @@ elif [ "$CLOUDINIT_ON_IDE1" -eq 0 ] && [ "$CLOUDINIT_ON_IDE2" -eq 0 ]; then
         fi
     fi
     
+    # Check if there's a custom script reference that might cause issues
+    CICUSTOM_REF=$(qm config $VM_ID | grep "^cicustom:")
+    if [ -n "$CICUSTOM_REF" ]; then
+        echo "INFO: Found custom cloud-init script reference: $CICUSTOM_REF"
+        # Extract script name to check if it exists
+        SCRIPT_NAME=$(echo "$CICUSTOM_REF" | sed 's/.*user=local:snippets\///g' | cut -d, -f1)
+        if [ -n "$SCRIPT_NAME" ]; then
+            SCRIPT_PATH="/var/lib/vz/snippets/$SCRIPT_NAME"
+            if [ ! -f "$SCRIPT_PATH" ]; then
+                echo "WARNING: Custom script $SCRIPT_PATH does not exist!"
+                echo "INFO: Removing custom script reference to avoid errors..."
+                qm set $VM_ID --delete cicustom
+                if [ $? -eq 0 ]; then
+                    echo "INFO: Custom script reference removed successfully."
+                else
+                    echo "WARNING: Failed to remove custom script reference."
+                fi
+            fi
+        fi
+    fi
+
     # Create cloud-init drive on ide2
     qm set $VM_ID --ide2 ${STORAGE}:cloudinit
     if [ $? -ne 0 ]; then
