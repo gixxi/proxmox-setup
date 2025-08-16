@@ -30,6 +30,7 @@ VM_ID=""
 STORAGE="proxmox_data"
 BRIDGE="vmbr0"
 GATEWAY="192.168.3.1"
+LOCAL_SUBNET="192.168.3.0/24"
 SSH_PUB_KEY_PATH="/root/.ssh/id_rsa.pub"
 TIMEZONE="Europe/Zurich"
 
@@ -57,6 +58,7 @@ show_usage() {
     echo "  --storage, -s     Proxmox storage ID (default: $STORAGE)"
     echo "  --bridge, -b      Network bridge (default: $BRIDGE)"
     echo "  --gateway, -g     Network gateway (default: $GATEWAY)"
+    echo "  --subnet          Local subnet for SSH access (default: $LOCAL_SUBNET)"
     echo "  --ssh-key         SSH public key path (default: $SSH_PUB_KEY_PATH)"
     echo "  --timezone, -t    Timezone (default: $TIMEZONE)"
     echo "  --help, -h        Show this help message"
@@ -112,6 +114,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --gateway|-g)
             GATEWAY="$2"
+            shift 2
+            ;;
+        --subnet)
+            LOCAL_SUBNET="$2"
             shift 2
             ;;
         --ssh-key)
@@ -194,6 +200,7 @@ echo "=================================================="
 echo " VM Name:        $VM_NAME"
 echo " IP Address:     $IP_ADDRESS"
 echo " Gateway:        $GATEWAY"
+echo " Local Subnet:   $LOCAL_SUBNET"
 echo " Memory:         $MEMORY MB"
 echo " CPU Cores:      $CPU"
 echo " Disk Size:      ${DISK}GB"
@@ -543,10 +550,10 @@ echo "INFO: Configuring DNS servers..."
 cp /etc/resolv.conf /etc/resolv.conf.backup 2>/dev/null || echo "No backup needed"
 
 # Create new resolv.conf with proper DNS servers
-cat > /etc/resolv.conf << 'RESOLV_EOF'
+cat > /etc/resolv.conf << RESOLV_EOF
 # DNS configuration for ${VM_NAME}
-# Primary: Router (matches Proxmox host network)
-nameserver 192.168.3.1
+# Primary: Router/Gateway (matches Proxmox host network)
+nameserver ${GATEWAY}
 # Secondary: Google DNS
 nameserver 8.8.8.8
 # Tertiary: Cloudflare DNS
@@ -570,8 +577,11 @@ echo "INFO: Configuring UFW firewall rules..."
 echo "Allowing SSH from specific IPs..."
 ufw allow from 172.105.94.119 to any port 22 proto tcp
 ufw allow from 116.203.216.1 to any port 22 proto tcp
-ufw allow from 192.168.3.0/24 to any port 22 proto tcp # Local network access
 ufw allow from 5.161.184.133 to any port 22 proto tcp
+
+# Allow SSH from local subnet
+echo "Allowing SSH from local subnet: ${LOCAL_SUBNET}..."
+ufw allow from ${LOCAL_SUBNET} to any port 22 proto tcp
 
 # Explicitly deny SSH from other sources (IPv4 and IPv6)
 echo "Denying SSH from other sources..."
