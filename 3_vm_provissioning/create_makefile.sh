@@ -78,7 +78,7 @@ DOCKER_MEMORY_RESERVATION=$(MEMORY_RESERVATION_GB)g
 
 # Set swap configuration
 ifeq ($(ENABLE_SWAP),true)
-	SWAP_CONFIG=--memory-swap=-1 --swappiness=$(SWAPPINESS)
+	SWAP_CONFIG=--memory-swap=-1 --memory-swappiness=$(SWAPPINESS)
 else
 	SWAP_CONFIG=--memory-swap=$(DOCKER_MEMORY)
 endif

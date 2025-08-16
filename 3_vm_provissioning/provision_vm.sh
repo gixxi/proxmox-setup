@@ -30,7 +30,6 @@ VM_ID=""
 STORAGE="proxmox_data"
 BRIDGE="vmbr0"
 GATEWAY="192.168.3.1"
-LOCAL_SUBNET="192.168.3.0/24"
 SSH_PUB_KEY_PATH="/root/.ssh/id_rsa.pub"
 TIMEZONE="Europe/Zurich"
 
@@ -58,7 +57,6 @@ show_usage() {
     echo "  --storage, -s     Proxmox storage ID (default: $STORAGE)"
     echo "  --bridge, -b      Network bridge (default: $BRIDGE)"
     echo "  --gateway, -g     Network gateway (default: $GATEWAY)"
-    echo "  --subnet          Local subnet for SSH access (default: $LOCAL_SUBNET)"
     echo "  --ssh-key         SSH public key path (default: $SSH_PUB_KEY_PATH)"
     echo "  --timezone, -t    Timezone (default: $TIMEZONE)"
     echo "  --help, -h        Show this help message"
@@ -114,10 +112,6 @@ while [[ $# -gt 0 ]]; do
             ;;
         --gateway|-g)
             GATEWAY="$2"
-            shift 2
-            ;;
-        --subnet)
-            LOCAL_SUBNET="$2"
             shift 2
             ;;
         --ssh-key)
@@ -200,7 +194,6 @@ echo "=================================================="
 echo " VM Name:        $VM_NAME"
 echo " IP Address:     $IP_ADDRESS"
 echo " Gateway:        $GATEWAY"
-echo " Local Subnet:   $LOCAL_SUBNET"
 echo " Memory:         $MEMORY MB"
 echo " CPU Cores:      $CPU"
 echo " Disk Size:      ${DISK}GB"
@@ -410,8 +403,8 @@ echo "INFO: Updating package lists and upgrading packages..."
 apt-get update -y && apt-get upgrade -y
 if [ \$? -ne 0 ]; then echo "WARNING: apt update/upgrade failed."; fi
 
-echo "INFO: Installing base packages including nginx and ufw..."
-apt-get install -y docker.io supervisor emacs vim nano curl wget parted gdisk mosh nginx ufw zsh tmux make
+echo "INFO: Installing base packages including nginx..."
+apt-get install -y docker.io supervisor emacs vim nano curl wget parted gdisk mosh nginx zsh tmux make
 if [ \$? -ne 0 ]; then echo "WARNING: apt install failed."; fi
 
 # Mask systemd-networkd-wait-online.service to prevent network wait delays
@@ -530,11 +523,19 @@ echo "INFO: Enabling and starting Docker service..."
 systemctl enable --now docker
 if [ \$? -ne 0 ]; then echo "WARNING: Failed to enable/start docker."; fi
 
-# Configure SSH settings (Allowing root login and password auth - adjust if needed)
+# Configure SSH settings (Allowing root login and password auth)
 echo "INFO: Configuring SSH authentication settings..."
-sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
-sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
-sed -i 's/#PubkeyAuthentication yes/PubkeyAuthentication yes/' /etc/ssh/sshd_config
+sed -i 's/#PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
+sed -i 's/#PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
+sed -i 's/PermitRootLogin no/PermitRootLogin yes/' /etc/ssh/sshd_config
+sed -i 's/PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+sed -i 's/#PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
+
+# Ensure these settings are present (append if not found)
+grep -q "^PasswordAuthentication yes" /etc/ssh/sshd_config || echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config
+grep -q "^PermitRootLogin yes" /etc/ssh/sshd_config || echo "PermitRootLogin yes" >> /etc/ssh/sshd_config
+grep -q "^PubkeyAuthentication yes" /etc/ssh/sshd_config || echo "PubkeyAuthentication yes" >> /etc/ssh/sshd_config
 
 # Restart SSH service to apply changes
 systemctl restart sshd
@@ -570,47 +571,8 @@ nslookup google.com 2>/dev/null && echo "DNS resolution working" || echo "WARNIN
 echo "INFO: Testing internet connectivity..."
 ping -c 1 8.8.8.8 >/dev/null 2>&1 && echo "Internet connectivity working" || echo "WARNING: Internet connectivity failed"
 
-# --- Configure UFW (Uncomplicated Firewall) ---
-echo "INFO: Configuring UFW firewall rules..."
-
-# Allow SSH (port 22) from specific IPs
-echo "Allowing SSH from specific IPs..."
-ufw allow from 172.105.94.119 to any port 22 proto tcp
-ufw allow from 116.203.216.1 to any port 22 proto tcp
-ufw allow from 5.161.184.133 to any port 22 proto tcp
-
-# Allow SSH from local subnet
-echo "Allowing SSH from local subnet: ${LOCAL_SUBNET}..."
-ufw allow from ${LOCAL_SUBNET} to any port 22 proto tcp
-
-# Explicitly deny SSH from other sources (IPv4 and IPv6)
-echo "Denying SSH from other sources..."
-ufw deny 22/tcp comment 'Deny all other SSH access'
-
-# Allow HTTP (port 80)
-echo "Allowing HTTP (port 80)..."
-ufw allow 80/tcp
-
-# Allow HTTPS (port 443)
-echo "Allowing HTTPS (port 443)..."
-ufw allow 443/tcp
-
-# Allow custom TCP ports (8080, 8443)
-echo "Allowing custom TCP ports 8080 and 8443..."
-ufw allow 8080/tcp
-ufw allow 8443/tcp
-
-# Allow Mosh UDP ports (60000:61000)
-echo "Allowing Mosh UDP ports (60000:61000)..."
-ufw allow 60000:61000/udp
-
-# Enable UFW
-echo "Enabling UFW..."
-# Use --force to enable without interactive prompt
-ufw --force enable
-
-echo "INFO: UFW enabled."
-# --- End UFW Configuration ---
+# --- No Firewall Configuration ---
+echo "INFO: Skipping firewall configuration - relying on external firewall/network security..."
 
 # Setup additional data disk (scsi1 -> /dev/sdb or similar) - REMOVED
 # echo "INFO: Setting up additional data disk..."
@@ -618,9 +580,9 @@ echo "INFO: UFW enabled."
 
 echo "--- Cloud-Init User Data Script Finished ---"
 
-# Optional: Print final UFW status to cloud-init log
-echo "Final UFW status:"
-ufw status verbose
+# Optional: Print SSH configuration for verification
+echo "SSH configuration summary:"
+grep -E "^(PasswordAuthentication|PermitRootLogin|PubkeyAuthentication)" /etc/ssh/sshd_config
 
 # Optional: Print Nginx status
 echo "Nginx service status:"
