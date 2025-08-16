@@ -68,7 +68,7 @@ DOCKER_MEMORY=$(shell echo $$(( $(HEAP_NUM) + 2 ))g)
 # Validate and calculate memory reservation
 MIN_RESERVATION_GB=$(shell echo $$(( $(HEAP_NUM) + 1 )))
 # Auto-calculate reservation if not set (0) or too low
-ifeq ($(MEMORY_RESERVATION_GB),0)
+ifeq ($(    ),0)
 	MEMORY_RESERVATION_GB := $(shell echo $$(( $(HEAP_NUM) + 2 )))
 endif
 RESERVATION_CHECK=$(shell if [ $(MEMORY_RESERVATION_GB) -lt $(MIN_RESERVATION_GB) ]; then echo "ERROR"; fi)

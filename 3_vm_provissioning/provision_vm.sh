@@ -523,18 +523,18 @@ echo "INFO: Enabling and starting Docker service..."
 systemctl enable --now docker
 if [ \$? -ne 0 ]; then echo "WARNING: Failed to enable/start docker."; fi
 
-# Configure SSH settings (Allowing root login and password auth)
+# Configure SSH settings (Disable password auth, enable only pubkey auth)
 echo "INFO: Configuring SSH authentication settings..."
-sed -i 's/#PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
-sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
-sed -i 's/#PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
-sed -i 's/PermitRootLogin no/PermitRootLogin yes/' /etc/ssh/sshd_config
-sed -i 's/PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+sed -i 's/#PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+sed -i 's/PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
+sed -i 's/#PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+sed -i 's/PermitRootLogin yes/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+sed -i 's/PermitRootLogin no/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
 sed -i 's/#PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
 
 # Ensure these settings are present (append if not found)
-grep -q "^PasswordAuthentication yes" /etc/ssh/sshd_config || echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config
-grep -q "^PermitRootLogin yes" /etc/ssh/sshd_config || echo "PermitRootLogin yes" >> /etc/ssh/sshd_config
+grep -q "^PasswordAuthentication no" /etc/ssh/sshd_config || echo "PasswordAuthentication no" >> /etc/ssh/sshd_config
+grep -q "^PermitRootLogin prohibit-password" /etc/ssh/sshd_config || echo "PermitRootLogin prohibit-password" >> /etc/ssh/sshd_config
 grep -q "^PubkeyAuthentication yes" /etc/ssh/sshd_config || echo "PubkeyAuthentication yes" >> /etc/ssh/sshd_config
 
 # Restart SSH service to apply changes
@@ -641,7 +641,7 @@ echo ""
 echo "NEXT STEPS:"
 echo "  1. Check cloud-init logs: /var/log/cloud-init-output.log"
 echo "  2. Verify services: systemctl status nginx docker"
-echo "  3. Check firewall: ufw status verbose"
+echo "  3. Check SSH access: ssh ${CI_USER}@${IP_ADDRESS} (using SSH key only)"
 echo "=================================================="
 
 # Optional: Clean up the downloaded image if desired
