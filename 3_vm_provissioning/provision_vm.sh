@@ -162,6 +162,13 @@ if ! [[ "$MEMORY" =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 
+# Validate memory limit (max 50000MB to avoid storage problems)
+if [ "$MEMORY" -gt 50000 ]; then
+  echo "Error: Memory cannot exceed 50000MB (50GB). Requested: ${MEMORY}MB"
+  echo "This limit prevents storage allocation problems."
+  exit 1
+fi
+
 if ! [[ "$CPU" =~ ^[0-9]+$ ]]; then
   echo "Error: CPU must be a positive integer: $CPU"
   exit 1
@@ -169,6 +176,13 @@ fi
 
 if ! [[ "$DISK" =~ ^[0-9]+$ ]]; then
   echo "Error: Disk size must be a positive integer (GB): $DISK"
+  exit 1
+fi
+
+# Validate disk size limit (max 100GB to avoid storage problems)
+if [ "$DISK" -gt 100 ]; then
+  echo "Error: Disk size cannot exceed 100GB. Requested: ${DISK}GB"
+  echo "This limit prevents storage allocation problems."
   exit 1
 fi
 
