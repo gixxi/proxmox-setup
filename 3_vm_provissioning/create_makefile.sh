@@ -84,7 +84,7 @@ else
 endif
 
 ifndef IMAGE
-	IMAGE := hub5.planet-rocklog.com:5000/vlic/vlic_runner:$(VERSION)
+	IMAGE := gixis/vlic_runner:$(VERSION)
 endif
 
 
@@ -94,9 +94,9 @@ endif
 
 build:
 	docker build -t vlic/vlic_runner:${VERSION} .
-	docker tag vlic/vlic_runner:${VERSION} hub5.planet-rocklog.com:5000/vlic/vlic_runner:${VERSION}
+	docker tag vlic/vlic_runner:${VERSION} gixis/vlic_runner:${VERSION}
 deploy:
-	sudo docker push hub5.planet-rocklog.com:5000/vlic/vlic_runner:${VERSION}
+	sudo docker push gixis/vlic_runner:${VERSION}
 
 persist:
 	-mkdir $(CONT_NAME)
