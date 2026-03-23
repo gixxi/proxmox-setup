@@ -5,13 +5,14 @@ Small scripts to configure a **local machine** or **single public cloud VM** (De
 ## Prerequisites
 
 - Debian or Ubuntu (uses `apt-get`).
-- Network access for `apt-get` (and Docker image pulls if you extend the scripts later).
+- **Docker** already installed and available on the machine (the script does not install it).
+- Network access for `apt-get`.
 
 ## Scripts
 
 | Script | Purpose |
 |--------|---------|
-| `1_setup_tools.sh` | Installs `nginx` and `docker.io`, applies the shared `nginx.conf`, restarts Nginx, enables Docker, runs a basic Docker check. |
+| `1_setup_tools.sh` | Installs `nginx`, applies the shared `nginx.conf`, restarts Nginx, enables Docker, runs a basic Docker check. |
 
 ## How to apply
 

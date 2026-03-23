@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Configure Nginx (same layout as 3_vm_provissioning/provision_vm.sh) and verify Docker.
-# Intended for Debian/Ubuntu on a single local or public-cloud VM. Run as root (see README).
+# Docker must already be installed. Intended for Debian/Ubuntu; run as root (see README).
 
 set -euo pipefail
 
@@ -9,10 +9,10 @@ if [ "${EUID:-}" -ne 0 ]; then
     exit 1
 fi
 
-echo "INFO: Installing nginx and docker.io (if needed)..."
+echo "INFO: Installing nginx (if needed)..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y nginx docker.io
+apt-get install -y nginx
 
 # --- Configure Nginx ---
 echo "INFO: Configuring Nginx..."
