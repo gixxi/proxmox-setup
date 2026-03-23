@@ -13,6 +13,20 @@ Small scripts to configure a **local machine** or **single public cloud VM** (De
 | Script | Purpose |
 |--------|---------|
 | `1_setup_tools.sh` | Installs `nginx`, applies the shared `nginx.conf`, restarts Nginx, enables Docker, runs a basic Docker check. |
+| `2_create_makefile.sh` | Same Makefile content as `3_vm_provissioning/create_makefile.sh`, written to `~/vlic_runner/Makefile` (creates `~/vlic_runner` if missing). No VM IP or `scp`—runs on the machine where you execute it. |
+
+### `2_create_makefile.sh` (normal user)
+
+Optional CircleCI token as the only argument (otherwise a placeholder line is written):
+
+```bash
+cd /path/to/proxmox-setup/public_cloud_vm_provisioning
+chmod +x 2_create_makefile.sh   # if needed
+./2_create_makefile.sh
+# or: ./2_create_makefile.sh "$CIRCLECI_TOKEN"
+```
+
+Then use Make from `~/vlic_runner` (see the script’s printed examples).
 
 ## How to apply
 
