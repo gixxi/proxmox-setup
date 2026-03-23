@@ -14,6 +14,7 @@ Small scripts to configure a **local machine** or **single public cloud VM** (De
 |--------|---------|
 | `1_setup_tools.sh` | Installs `nginx`, applies the shared `nginx.conf`, restarts Nginx, enables Docker, runs a basic Docker check. |
 | `2_create_makefile.sh` | Same Makefile content as `3_vm_provissioning/create_makefile.sh`, written to `~/vlic_runner/Makefile` (creates `~/vlic_runner` if missing). No VM IP or `scp`—runs on the machine where you execute it. |
+| `3_restore_from_ftp.sh` | Mounts a remote directory with **sshfs** (same style as `4_running_planet_rocklog/backup-sshfs/do_backup_for_system.sh`) and **rsync**s from a path under that mount into a local target directory. |
 
 ### `2_create_makefile.sh` (normal user)
 
@@ -27,6 +28,24 @@ chmod +x 2_create_makefile.sh   # if needed
 ```
 
 Then use Make from `~/vlic_runner` (see the script’s printed examples).
+
+### `3_restore_from_ftp.sh`
+
+Requires `sshfs`, FUSE, and `rsync` on the machine (e.g. `apt-get install -y sshfs rsync`).
+
+The “FTP” name matches the backup scripts: the transport is **SSH/SFTP via sshfs**, not classic FTP.
+
+```bash
+./3_restore_from_ftp.sh -f backup.example.com -u myuser -p 'secret' \
+  -d /path/on/server -s sicherung_vm1/vm1-Monday -t /var/vlic/rocklog-vlic-docker/vlic_runner/vm1
+```
+
+- **`-d`** — Remote path passed to sshfs (`user@host:…` after the colon), same idea as `-d` in `do_backup_for_system.sh`.
+- **`-s`** — Path under the mount to restore from (use `-s .` for the mount root).
+- **`-t`** — Local directory to receive files (created if missing).
+- **`-m`** — Optional custom mount point (default `/tmp/restoremnt_sshfs`).
+
+The script unmounts on exit and tries to remove the empty mount-point directory. Passing the password on the command line is convenient but not secret-safe; prefer SSH keys if you can configure them for sshfs.
 
 ## How to apply
 
