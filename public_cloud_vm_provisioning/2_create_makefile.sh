@@ -89,7 +89,7 @@ build:
 	docker build -t vlic/vlic_runner:${VERSION} .
 	docker tag vlic/vlic_runner:${VERSION} gixxi/vlic_runner:${VERSION}
 deploy:
-	sudo docker push gixxi/vlic_runner:${VERSION}
+	docker push gixxi/vlic_runner:${VERSION}
 
 persist:
 	-mkdir $(CONT_NAME)
@@ -107,11 +107,11 @@ extract: persist
 
 bash: persist
 	echo "Starting bash in new container"
-	sudo docker run -e LANG=C.UTF-8 -e LC_ALL=C.UTF-8 --name=$(CONT_NAME) -it --restart='always' -p $(COUCHDB_PORT):5984 -p 5987:5986 -p $(VLIC_PORT):8080 -v $(current_dir)/$(CONT_NAME)/data:/data -v $(current_dir)/$(CONT_NAME)/tmp/vlic:/tmp/vlic -v $(current_dir)/$(CONT_NAME)/log ${IMAGE} bash
+	docker run -e LANG=C.UTF-8 -e LC_ALL=C.UTF-8 --name=$(CONT_NAME) -it --restart='always' -p $(COUCHDB_PORT):5984 -p 5987:5986 -p $(VLIC_PORT):8080 -v $(current_dir)/$(CONT_NAME)/data:/data -v $(current_dir)/$(CONT_NAME)/tmp/vlic:/tmp/vlic -v $(current_dir)/$(CONT_NAME)/log ${IMAGE} bash
 
 couchdb: persist
 	echo "Starting bash in new container"
-	sudo docker run -e LANG=C.UTF-8 -e LC_ALL=C.UTF-8 --name=$(CONT_NAME) -it -p $(COUCHDB_PORT):5984 -p $(VLIC_PORT):8080 -v $(current_dir)/$(CONT_NAME)/data:/data -v $(current_dir)/$(CONT_NAME)/tmp/vlic:/tmp/vlic -v $(current_dir)/$(CONT_NAME)/log ${IMAGE} couchdb bash
+	docker run -e LANG=C.UTF-8 -e LC_ALL=C.UTF-8 --name=$(CONT_NAME) -it -p $(COUCHDB_PORT):5984 -p $(VLIC_PORT):8080 -v $(current_dir)/$(CONT_NAME)/data:/data -v $(current_dir)/$(CONT_NAME)/tmp/vlic:/tmp/vlic -v $(current_dir)/$(CONT_NAME)/log ${IMAGE} couchdb bash
 
 64bit: extract
 	echo "Building container with unique data dir $(CONT_NAME) with archive $(ARCHIVE) for customer data, image=$(IMAGE) -Xmx=$(Xmx) cores=$(CORES)"
@@ -122,8 +122,8 @@ couchdb: persist
 		echo "Please set MEMORY_RESERVATION_GB=$(MIN_RESERVATION_GB) or higher"; \
 		exit 1; \
 	fi
-	-sudo docker rm -f $(CONT_NAME)
-	sudo docker run -e LANG=C.UTF-8 -e LC_ALL=C.UTF-8 --rm --name=$(CONT_NAME) \
+	-docker rm -f $(CONT_NAME)
+	docker run -e LANG=C.UTF-8 -e LC_ALL=C.UTF-8 --rm --name=$(CONT_NAME) \
 		-p $(VLIC_PORT):8080 -p 1$(VLIC_PORT):4050 -p 2$(VLIC_PORT):5984 \
 		-v $(current_dir)/$(CONT_NAME)/.ssh:/.ssh \
 		-v $(current_dir)/$(CONT_NAME)/data:/data \
