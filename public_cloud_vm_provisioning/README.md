@@ -15,7 +15,7 @@ Small scripts to configure a **local machine** or **single public cloud VM** (De
 | `1_setup_tools.sh` | Installs `nginx`, applies the shared `nginx.conf`, restarts Nginx, enables Docker, runs a basic Docker check. |
 | `2_create_makefile.sh` | Same Makefile content as `3_vm_provissioning/create_makefile.sh`, written to `~/vlic_runner/Makefile` (creates `~/vlic_runner` if missing). No VM IP or `scp`—runs on the machine where you execute it. |
 | `3_restore_from_ftp.sh` | Mounts a remote directory with **sshfs** (same style as `4_running_planet_rocklog/backup-sshfs/do_backup_for_system.sh`) and **rsync**s from a path under that mount into a local target directory. |
-| `4_create_nginx_proxy_configuration.sh` | Local copy of `5_running_bastian_vm/create_nginx_proxy_configuration.sh`: Nginx vhost + location for `subdomain.domain`, proxy to **127.0.0.1:port**. TLS paths from `certbot certificates -d <fqdn>`. **Root only.** |
+| `4_create_nginx_proxy_configuration.sh` | Nginx vhost for **service** `<subdomain>.<domain>`; TLS paths from cert issued for **`<server>.<domain>`** (`certbot certificates -d …`). Proxy to **127.0.0.1:port**. **Root only.** |
 
 ### `2_create_makefile.sh` (normal user)
 
@@ -50,15 +50,20 @@ The script unmounts on exit and tries to remove the empty mount-point directory.
 
 ### `4_create_nginx_proxy_configuration.sh` (root)
 
-Runs on the host where Nginx and Certbot live. Proxies to the app on **localhost** (Docker). Arguments: `domain`, `subdomain`, `app_http_port` (three args only — no Bastian/app VM IPs).
+Runs on the host where Nginx and Certbot live. Proxies to the app on **localhost** (Docker).
 
-TLS files are resolved by parsing `certbot certificates -d <subdomain>.<domain>` (must match an existing certificate name).
+Two names matter:
+
+1. **Service domain** — what Nginx serves (`server_name`, config filenames): `<subdomain>.<domain>` (e.g. `customer-xy.rocklog.ch`).
+2. **Certificate domain** — the FQDN the existing Let’s Encrypt cert was issued for: `<server>.<domain>` (e.g. `hub-zh-01.rocklog.ch`). The script runs `certbot certificates -d <server>.<domain>` and uses the listed `fullchain.pem` / `privkey.pem`.
+
+Arguments: `domain`, `subdomain`, `server`, `app_http_port`.
 
 ```bash
-sudo ./4_create_nginx_proxy_configuration.sh rocklog.ch myapp 8080
+sudo ./4_create_nginx_proxy_configuration.sh rocklog.ch customer-xy hub-zh-01 8080
 ```
 
-Requires `certbot` and a certificate already issued for the FQDN (e.g. `hub-zh-01.rocklog.ch`).
+Requires `certbot` and a certificate already issued for `<server>.<domain>`. If the cert does not cover the service hostname, add a matching SAN or use a cert that includes both names; otherwise browsers may warn.
 
 ## How to apply
 

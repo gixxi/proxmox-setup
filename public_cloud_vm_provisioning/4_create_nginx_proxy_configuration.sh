@@ -1,37 +1,43 @@
 #!/usr/bin/env bash
 # Nginx reverse proxy (vhost + location) on the local machine (Docker app on localhost).
-# TLS paths are resolved from: certbot certificates -d <fqdn>
-# Usage: sudo ./4_create_nginx_proxy_configuration.sh <domain> <subdomain> <app_http_port>
+#
+# Service FQDN (nginx server_name, config filenames): <subdomain>.<domain>  e.g. customer-xy.rocklog.ch
+# Certificate FQDN (Let's Encrypt name):              <server>.<domain>       e.g. hub-zh-01.rocklog.ch
+#
+# TLS paths from: certbot certificates -d <server>.<domain>
+# Usage: sudo ./4_create_nginx_proxy_configuration.sh <domain> <subdomain> <server> <app_http_port>
 
 set -euo pipefail
 
 usage() {
-    echo "Usage: sudo $0 <domain> <subdomain> <app_http_port>" >&2
+    echo "Usage: sudo $0 <domain> <subdomain> <server> <app_http_port>" >&2
     echo "  domain          Base domain (e.g. rocklog.ch)" >&2
-    echo "  subdomain       Subdomain part (e.g. myapp) — FQDN becomes <subdomain>.<domain>" >&2
+    echo "  subdomain       Service hostname label — nginx uses <subdomain>.<domain> (e.g. customer-xy)" >&2
+    echo "  server          Hostname label for the existing Let's Encrypt cert (e.g. hub-zh-01)" >&2
     echo "  app_http_port   Local port where the app listens (Docker on this host)" >&2
     echo "Must be run as root (writes under /etc/nginx and reads /etc/letsencrypt)." >&2
 }
 
 if [ "${EUID:-}" -ne 0 ]; then
-    echo "ERROR: Run as root, e.g. sudo $0 <domain> <subdomain> <app_http_port>" >&2
+    echo "ERROR: Run as root, e.g. sudo $0 <domain> <subdomain> <server> <app_http_port>" >&2
     usage
     exit 1
 fi
 
-if [ "$#" -ne 3 ]; then
-    echo "ERROR: Expected 3 arguments, got $#" >&2
+if [ "$#" -ne 4 ]; then
+    echo "ERROR: Expected 4 arguments, got $#" >&2
     usage
     exit 1
 fi
 
 DOMAIN=$1
 SUBDOMAIN=$2
-APP_PORT=$3
+SERVER=$3
+APP_PORT=$4
 APP_HOST="127.0.0.1"
 
-if [ -z "$DOMAIN" ] || [ -z "$SUBDOMAIN" ] || [ -z "$APP_PORT" ]; then
-    echo "ERROR: domain, subdomain, and app_http_port must be non-empty." >&2
+if [ -z "$DOMAIN" ] || [ -z "$SUBDOMAIN" ] || [ -z "$SERVER" ] || [ -z "$APP_PORT" ]; then
+    echo "ERROR: domain, subdomain, server, and app_http_port must be non-empty." >&2
     usage
     exit 1
 fi
@@ -41,9 +47,12 @@ if ! [[ "$APP_PORT" =~ ^[0-9]+$ ]] || [ "$APP_PORT" -lt 1 ] || [ "$APP_PORT" -gt
     exit 1
 fi
 
+# Nginx vhost / paths: service domain
 FULL_SERVER_NAME="${SUBDOMAIN}.${DOMAIN}"
+# Certbot: certificate issued for this FQDN (often the host name, not the customer-facing name)
+CERT_FQDN="${SERVER}.${DOMAIN}"
 
-SERVER_CONF="/etc/nginx/sites-enabled/${FULL_SERVER_NAME}.conf"
+VHOST_CONF="/etc/nginx/sites-enabled/${FULL_SERVER_NAME}.conf"
 LOCATION_DIR="/etc/nginx/sites-enabled/locations"
 LOCATION_CONF="${LOCATION_DIR}/${SUBDOMAIN}.location.conf"
 
@@ -82,15 +91,16 @@ resolve_letsencrypt_paths() {
     fi
 }
 
-resolve_letsencrypt_paths "$FULL_SERVER_NAME"
+resolve_letsencrypt_paths "$CERT_FQDN"
 
 echo "--- Starting Nginx proxy configuration (local) ---"
-echo " Domain:        $DOMAIN"
-echo " Subdomain:     $SUBDOMAIN"
-echo " App (local):   $APP_HOST:$APP_PORT"
-echo " Full server:   $FULL_SERVER_NAME"
-echo " TLS cert:      $SSL_CERT"
-echo " TLS key:       $SSL_KEY"
+echo " Domain:           $DOMAIN"
+echo " Service (nginx):  $FULL_SERVER_NAME  (subdomain + domain)"
+echo " Cert lookup:      $CERT_FQDN  (server + domain)"
+echo " Server label:     $SERVER"
+echo " App (local):      $APP_HOST:$APP_PORT"
+echo " TLS cert file:    $SSL_CERT"
+echo " TLS key file:     $SSL_KEY"
 echo "-----------------------------------------"
 echo "INFO: Server block for ${FULL_SERVER_NAME}; location /${SUBDOMAIN}/ for path-prefixed access"
 echo "-----------------------------------------"
@@ -98,7 +108,7 @@ echo "-----------------------------------------"
 mkdir -p /etc/nginx/sites-enabled
 mkdir -p "${LOCATION_DIR}"
 
-cat > "${SERVER_CONF}" << VHOST_EOF
+cat > "${VHOST_CONF}" << VHOST_EOF
 # Configuration for ${FULL_SERVER_NAME}
 # Managed by 4_create_nginx_proxy_configuration.sh
 
@@ -121,6 +131,7 @@ server {
     root /var/www/html;
     index index.html index.htm;
 
+    # Certificate files are for ${CERT_FQDN}; server_name is the service host ${FULL_SERVER_NAME}
     ssl_certificate ${SSL_CERT};
     ssl_certificate_key ${SSL_KEY};
 
@@ -194,7 +205,7 @@ location /${SUBDOMAIN}/ {
 }
 LOCATION_EOF
 
-echo "INFO: Wrote ${SERVER_CONF}"
+echo "INFO: Wrote ${VHOST_CONF}"
 echo "INFO: Wrote ${LOCATION_CONF}"
 
 echo "INFO: Testing Nginx configuration..."
@@ -205,7 +216,7 @@ if nginx -t; then
     echo "INFO: Nginx reloaded successfully."
 else
     echo "ERROR: nginx -t failed. Files left in place for inspection:" >&2
-    echo "  - ${SERVER_CONF}" >&2
+    echo "  - ${VHOST_CONF}" >&2
     echo "  - ${LOCATION_CONF}" >&2
     exit 1
 fi
