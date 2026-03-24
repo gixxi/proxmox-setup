@@ -80,16 +80,9 @@ ifndef IMAGE
 	IMAGE := gixxi/vlic_runner:$(VERSION)
 endif
 
-
 ifndef CONT_NAME
 	CONT_NAME := $(shell date +%s | sha256sum | base64 | head -c 32)
 endif
-
-build:
-	docker build -t vlic/vlic_runner:${VERSION} .
-	docker tag vlic/vlic_runner:${VERSION} gixxi/vlic_runner:${VERSION}
-deploy:
-	docker push gixxi/vlic_runner:${VERSION}
 
 persist:
 	-mkdir $(CONT_NAME)
