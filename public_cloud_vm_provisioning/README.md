@@ -16,6 +16,7 @@ Small scripts to configure a **local machine** or **single public cloud VM** (De
 | `2_create_makefile.sh` | Same Makefile content as `3_vm_provissioning/create_makefile.sh`, written to `~/vlic_runner/Makefile` (creates `~/vlic_runner` if missing). No VM IP or `scp`—runs on the machine where you execute it. |
 | `3_restore_from_ftp.sh` | Mounts a remote directory with **sshfs** (same style as `4_running_planet_rocklog/backup-sshfs/do_backup_for_system.sh`) and **rsync**s from a path under that mount into a local target directory. |
 | `4_create_nginx_proxy_configuration.sh` | Nginx vhost for **service** `<subdomain>.<domain>`; TLS paths from cert issued for **`<server>.<domain>`** (`certbot certificates -d …`). Proxy to **127.0.0.1:port**. **Root only.** |
+| `5_create_default_nginx_configuration.sh` | Writes **`/etc/nginx/sites-enabled/default`** as `default_server` for one FQDN; TLS via **`certbot certificates -d <fqdn>`**; backs up `sites-enabled` to **`sites-enabled.bak`** once; includes **`locations/*.conf`**. **Root only.** |
 
 ### `2_create_makefile.sh` (normal user)
 
@@ -64,6 +65,22 @@ sudo ./4_create_nginx_proxy_configuration.sh rocklog.ch customer-xy hub-zh-01 80
 ```
 
 Requires `certbot` and a certificate already issued for `<server>.<domain>`. If the cert does not cover the service hostname, add a matching SAN or use a cert that includes both names; otherwise browsers may warn.
+
+### `5_create_default_nginx_configuration.sh` (root)
+
+One argument: **full hostname** (same value for `server_name` and for `certbot certificates -d`), e.g. `hub-zh-01.planet-rocklog.com`.
+
+1. Requires root.  
+2. On first run, copies `/etc/nginx/sites-enabled` → `/etc/nginx/sites-enabled.bak` if `.bak` does not exist.  
+3. Resolves `fullchain.pem` / `privkey.pem` with certbot for that FQDN.  
+4. Writes `default`, ensures `locations/` exists (adds a tiny placeholder `*.conf` only if the directory has no `.conf` files yet, so `include` works).  
+5. Runs `nginx -t` and `systemctl reload nginx`.
+
+```bash
+sudo ./5_create_default_nginx_configuration.sh hub-zh-01.planet-rocklog.com
+```
+
+`listen 443` uses `ssl` (required for HTTPS). The `/werner/status` location serves from `/tmp` (see script comments).
 
 ## How to apply
 

@@ -2,11 +2,84 @@
 
 # Docker Container Memory and Swap Monitor
 # Usage: ./monitor_container_memory.sh <container_name_or_id> [interval_seconds]
+#        ./monitor_container_memory.sh --help
+
+print_legend() {
+    cat << 'LEGEND'
+Docker container memory monitor — field reference
+=================================================
+
+--- Docker Stats (docker stats) ---
+  NAME          Container name.
+  CPU %         CPU usage as a percentage of total host CPUs (can exceed 100% if using multiple cores).
+  MEM USAGE / LIMIT
+                Current RAM used by the container vs the hard memory limit (--memory). Same cap as
+                "Memory Limit" below.
+  MEM %         Used memory as a percentage of that limit.
+  NET I/O       Cumulative network bytes received / transmitted since the container started (not a rate).
+  BLOCK I/O     Cumulative bytes read from / written to block devices (layer + volumes); not a rate.
+
+--- Detailed Memory Stats — cgroup v2 (when shown) ---
+  Using cgroup v2 format
+                The kernel exposes unified cgroup v2 files under /sys/fs/cgroup/.
+
+  Current Memory
+                memory.current — total physical RAM charged to this cgroup right now (includes cache
+                components counted below where applicable).
+
+  Peak Memory   memory.peak — high-water mark of memory.current since the cgroup was created.
+
+  Anonymous Pages (anon)
+                memory.stat anon — heap, thread stacks, anonymous mmap: data not tied to a file on disk.
+                Often the bulk of JVM/process heap.
+
+  File Cache (file)
+                memory.stat file — page cache for file-backed mappings (e.g. JARs, mmap’d files).
+
+  Kernel Stack  memory.stat kernel_stack — memory for per-thread kernel stacks.
+
+  Slab Memory   memory.stat slab — kernel slab allocations attributed to this cgroup (metadata, sockets, etc.).
+
+  Current Swap  memory.swap.current — swap used by this cgroup (0 is ideal for latency-sensitive workloads).
+
+--- Detailed Memory Stats — cgroup v1 (when shown) ---
+  Cache Memory  Page cache for file-backed pages in this cgroup.
+  RSS (Real RAM) Resident set: anonymous + mapped pages in RAM.
+  Swap Usage / Total Swap
+                Swap consumed by this cgroup (total_* are hierarchical sums where applicable).
+  Total Memory  Combined RSS + cache style total shown by the script (see line in output).
+
+--- Memory Limits ---
+  Memory Limit  Docker --memory: hard cap on RAM for the container (0 / unset means no limit).
+  Swap Limit    Docker memory+swap semantics: max memory+swap together, or "Unlimited", or same as
+                memory when no extra swap is allowed.
+
+--- Host System Memory (free -h) ---
+  total / used / free
+                Physical RAM on the host (not only this container).
+  shared        Memory used mainly by tmpfs or shared mappings.
+  buff/cache    Kernel buffers and page cache; often reclaimable under pressure.
+  available     Estimate of RAM available for new workloads without swapping.
+  Swap          Host swap (container swap is also constrained by Docker limits above).
+
+For continuous mode, interval 0 runs once without refresh loop.
+
+LEGEND
+}
+
+case "${1:-}" in
+    --help|-h|--legend)
+        print_legend
+        exit 0
+        ;;
+esac
 
 if [ $# -lt 1 ]; then
     echo "Usage: $0 <container_name_or_id> [interval_seconds]"
+    echo "       $0 --help"
     echo "  container_name_or_id - Name or ID of the container to monitor"
-    echo "  interval_seconds     - Refresh interval (default: 5 seconds)"
+    echo "  interval_seconds     - Refresh interval (default: 5 seconds; use 0 for a single snapshot)"
+    echo "  --help, -h, --legend - Explain all columns and cgroup fields printed by this script"
     exit 1
 fi
 
