@@ -46,12 +46,12 @@ sshd:  all
 ### Create a non-root user
 
 ```bash
-adduser username -h /home/username
-mkdir /home/username/.ssh
-chmod 700 /home/username/.ssh
-touch /home/username/.ssh/authorized_keys
-chmod 600 /home/username/.ssh/authorized_keys
-chown -R username:username /home/username
+USERN=lambdaroyal-anon && adduser $USERN -h /home/$USERN &&
+mkdir /home/$USERN/.ssh && \\
+chmod 700 /home/$USERN/.ssh && \\
+touch /home/$USERN/.ssh/authorized_keys && \\
+chmod 600 /home/$USERN/.ssh/authorized_keys && \\
+chown -R $USERN:$USERN /home/$USERN
 ```
 
 ### Adding the username to the sshd_config file
