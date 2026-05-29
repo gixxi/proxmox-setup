@@ -183,3 +183,24 @@ enter webroot
 
 > /var/www/html
 
+# Mail Relay Configuration
+
+Keycloak versucht Emails über den Google Mailrelay. Dazu muss die IP des Servers in der GCP Adminconsole hinterlegt sein. Nach relay suchen.
+
+# Devops
+
+## Branch-Verwaltung
+
+Die durch rocklogEDGE benötigen Docker Images werden durch den Docker Hub bereitgestellt. Für die Anmeldung des Hosts bei Docker Hub wird ein Authorisierungschlüssel benötigt.
+
+(per github anmelden und Personal access token besorgen)
+[https://app.docker.com/accounts/gixxi/settings/personal-access-tokens](https://app.docker.com/accounts/gixxi/settings/personal-access-tokens)
+
+Dort einen Token für den spezifischen Host erzeugen.
+
+Dann login mittels
+
+```bash
+docker login -u gixxi
+```
+
