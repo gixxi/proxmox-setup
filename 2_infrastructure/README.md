@@ -137,13 +137,49 @@ apt-get update
 apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 ```
 
-### Benutzer lambdaroyal-anon zur Gruppe docker hinzufügen
-# Add lambdaroyal-anon user to docker group
+
+## Add lambdaroyal-anon user to docker group
 usermod -aG docker lambdaroyal-anon
 
-# Update permissions in current session 
+## Update permissions in current session 
 newgrp docker
 
-# Allow access to docker socket
+## Allow access to docker socket
 chmod 666 /var/run/docker.sock
+
+# Einrichtung Nginx
+
+```
+apt-get install nginx
+service nginx enable
+```
+Im Template ggf. Ports und Pfad zum Zertifikat anpassen!
+
+# Einrichtung Letsencrypt Certificat mit HTTP Challenge
+
+> apt-get install snapd
+
+Install certbot
+
+> snap install --classic certbot
+
+Create a link for convenience
+
+> ln -s /snap/bin/certbot /usr/bin/certbot
+
+Get the certificate
+
+> certbot certonly --webroot
+
+use info@rocklog.ch as email
+
+Say yes to everything :)
+
+enter subdomain, e.g.
+
+> hub8.planet-rocklog.com
+
+enter webroot
+
+> /var/www/html
 
