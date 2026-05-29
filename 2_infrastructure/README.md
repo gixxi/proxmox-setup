@@ -80,3 +80,29 @@ chmod 700 /home/$USERN/.ssh
 chmod 600 /home/$USERN/.ssh/authorized_keys
 ```
 
+### Install requirements and install UFW
+
+#### UFW only necessary for non-proxmox servers
+
+### Setup UFW (Ubuntu Firewall)
+
+als **root**
+
+Install
+
+> apt-get install ufw
+
+Setup rules
+
+```
+/sbin/ufw allow http &&
+/sbin/ufw allow https &&
+/sbin/ufw allow 60000:61000/udp &&
+/sbin/ufw enable &&
+/sbin/ufw status verbose
+```
+
+## Install necessary tools
+
+> apt-get install git xclip sudo ftp make supervisor lftp mosh nginx
+
