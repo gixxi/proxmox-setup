@@ -95,6 +95,7 @@ Install
 Setup rules
 
 ```
+/sbin/ufw allow ssh &&
 /sbin/ufw allow http &&
 /sbin/ufw allow https &&
 /sbin/ufw allow 60000:61000/udp &&
