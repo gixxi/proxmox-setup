@@ -1,5 +1,11 @@
 # Infrastructure
 
+## Set root pw
+
+> passwd ...
+
+und unter [server root credentials]{https://docs.google.com/}
+
 ## SSH Hardening
 
 In order to login to any Proxmox host using SSH the following requirements must be met:
