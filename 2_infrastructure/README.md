@@ -105,5 +105,45 @@ Setup rules
 
 ## Install necessary tools
 
-> apt-get install git xclip sudo ftp make supervisor lftp mosh nginx
+> apt-get install emacs nano vim git xclip sudo ftp make supervisor lftp mosh nginx curl wget tmux openssh-server net-tools postgresql-client
+
+## Set timezone to CET
+
+> timedatectl set-timezone Europe/Berlin
+
+### Bash als Standard-Shell setzen
+
+> chsh -s /bin/bash lambdaroyal-anon
+
+## Docker installieren
+
+Docker installieren für Debian 13 incl. docker compose
+
+```bash
+for pkg in docker.io docker-doc docker-compose podman-docker containerd runc; do apt-get remove $pkg; done
+# Offiziellen GPG-Schlüssel von Docker hinzufügen:
+apt-get update
+apt-get install ca-certificates curl
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+chmod a+r /etc/apt/keyrings/docker.asc
+
+# Repository zu Apt-Quellen hinzufügen:
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian \
+  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+  tee /etc/apt/sources.list.d/docker.list > /dev/null
+apt-get update
+apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+```
+
+### Benutzer lambdaroyal-anon zur Gruppe docker hinzufügen
+# Add lambdaroyal-anon user to docker group
+usermod -aG docker lambdaroyal-anon
+
+# Update permissions in current session 
+newgrp docker
+
+# Allow access to docker socket
+chmod 666 /var/run/docker.sock
 
