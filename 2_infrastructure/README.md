@@ -72,10 +72,10 @@ AllowUsers username
 
 The SSH key must be added to the **authorized_keys** file of the root user and the extra user created above.
 
-als user ausführen
+als user **root** ausführen
 
 ```bash
-USERN=lambdaroyal-anon && chown -R $USERN:$USERN /home/deploy/.ssh
+USERN=lambdaroyal-anon && chown -R $USERN:$USERN /home/$USERN/.ssh
 chmod 700 /home/$USERN/.ssh
 chmod 600 /home/$USERN/.ssh/authorized_keys
 ```
