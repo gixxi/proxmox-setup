@@ -155,6 +155,33 @@ service nginx enable
 ```
 Im Template ggf. Ports und Pfad zum Zertifikat anpassen!
 
+
+## Anpassen der Konfiguration für das Einlesen von Subdomänenkonfigurationen
+
+für Planet Rocklog besteht jede Konfiguration aus zwei Files:
+
+1. Konfiguration eines virtuellen Servers 
+
+- Eingelesen durch sites-enabled/*.conf
+
+2. Konfiguration eines Locations Blocks
+
+- Eingelesen durch sites-enabled/locations/*.conf
+
+Für die Sicherstellung ist das File /etc/nginx/nginx.conf so zu konfigurieren, dass es die Files aus sites-enabled/*.conf und sites-enabled/locations/*.conf einliest.
+
+```nginx
+##
+    # Virtual Host Configs
+    ##
+    include /etc/nginx/conf.d/*.conf;
+    # Include individual .conf files from sites-enabled
+    include /etc/nginx/sites-enabled/*.conf;
+    # Explicitly include the standard default site if it exists
+    include /etc/nginx/sites-enabled/default;
+```
+
+
 # Einrichtung Letsencrypt Certificat mit HTTP Challenge
 
 > apt-get install snapd
