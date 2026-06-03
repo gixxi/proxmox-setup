@@ -30,7 +30,6 @@ while getopts :s:f:d:u:p: OPTION ; do
 done
 
 umask 000
-main_dir="/var/vlic/rocklog-vlic-docker/vlic_runner/"
 mnt_dir="/tmp/backupmnt/"
 day=`LC_ALL=C date +%A`
 
@@ -58,13 +57,13 @@ fi
 
 # Only proceed with backup if mounting was successful
 if mountpoint -q $mnt_dir ; then
-    cd $main_dir/$source/
+    cd $source/
 
     echo sicherung startet fuer $source...
 
     mkdir -p $mnt_dir/sicherung_$source
 
-    rsync -av --partial --no-perms --progress --inplace --no-group --no-owner --exclude={/log/,/logs/,/tmp/vlic/printing/tmp/,/tmp/vlic/dump.evictor/,/tmp/vlic/interfaces/} $main_dir/$source/ $mnt_dir/sicherung_$source/$source-$day/ >> /var/log/backup/log_backup_$source.log
+    rsync -av --partial --no-perms --progress --inplace --no-group --no-owner --exclude={/log/,/logs/,/tmp/vlic/printing/tmp/,/tmp/vlic/dump.evictor/,/tmp/vlic/interfaces/} $source/ $mnt_dir/sicherung_$source/$source-$day/ >> /var/log/backup/log_backup_$source.log
 
     echo unmount ordner fuer $source...
 
