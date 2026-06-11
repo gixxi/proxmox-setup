@@ -48,40 +48,39 @@ ifndef Xmx
 	Xmx := 4g
 endif
 
+# Swap headroom in GB (operand) — overridable
+ifndef SWAP_HEADROOM_GB
+	SWAP_HEADROOM_GB := 8
+endif
+ifndef HEAP_HEADROOM
+	HEAP_HEADROOM := 2
+endif
+
 # Memory management parameters - will be calculated based on Xmx if not set
 ifndef MEMORY_RESERVATION_GB
 	MEMORY_RESERVATION_GB := 0
 endif
 
-ifndef ENABLE_SWAP
-	ENABLE_SWAP := false
-endif
-
-ifndef SWAPPINESS
-	SWAPPINESS := 10
-endif
-
 JAVA_HEAP=$(Xmx)
 HEAP_NUM=$(JAVA_HEAP:g=)
-DOCKER_MEMORY=$(shell echo $$(( $(HEAP_NUM) + 2 ))g)
+
+
+# Computed totals (note: := so they expand once, now, with HEAP_NUM known)
+DOCKER_MEMORY      := $(shell echo $$(( $(HEAP_NUM) + $(HEAP_HEADROOM) )))g
+SWAP_TOTAL_GB      := $(shell echo $$(( $(HEAP_NUM) + $(SWAP_HEADROOM_GB) + $(HEAP_HEADROOM) )))
+DOCKER_SWAP_MEMORY := $(SWAP_TOTAL_GB)g
 
 # Validate and calculate memory reservation
-MIN_RESERVATION_GB=$(shell echo $$(( $(HEAP_NUM) + 1 )))
-# Auto-calculate reservation if not set (0) or too low
+MIN_RESERVATION_GB := $(shell echo $$(( $(HEAP_NUM) + 1 )))
+
 ifeq ($(MEMORY_RESERVATION_GB),0)
-	MEMORY_RESERVATION_GB := $(shell echo $$(( $(HEAP_NUM) + 2 )))
+	MEMORY_RESERVATION_GB := $(shell echo $$(( $(HEAP_NUM) + 1 )))
 endif
-RESERVATION_CHECK=$(shell if [ $(MEMORY_RESERVATION_GB) -lt $(MIN_RESERVATION_GB) ]; then echo "ERROR"; fi)
 
-# Calculate memory reservation (soft limit)
-DOCKER_MEMORY_RESERVATION=$(MEMORY_RESERVATION_GB)g
+RESERVATION_CHECK := $(shell if [ $(MEMORY_RESERVATION_GB) -lt $(MIN_RESERVATION_GB) ]; then echo "ERROR"; fi)
 
-# Set swap configuration
-ifeq ($(ENABLE_SWAP),true)
-	SWAP_CONFIG=--memory-swap=-1 --memory-swappiness=$(SWAPPINESS)
-else
-	SWAP_CONFIG=--memory-swap=$(DOCKER_MEMORY)
-endif
+DOCKER_MEMORY_RESERVATION := $(MEMORY_RESERVATION_GB)g
+SWAP_CONFIG := --memory-swap=$(DOCKER_SWAP_MEMORY)
 
 ifndef IMAGE
 	IMAGE := gixxi/vlic_runner:$(VERSION)
