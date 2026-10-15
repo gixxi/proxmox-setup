@@ -3,8 +3,10 @@
 # Daily rsync Backup 
 
 # This script consumes the subsequently listed parameters
+#   -s source  -f server  -d remote dir  -u user
+#   -P file    password file (mode 600) — preferred; -p password shows up in ps and crontab
 
-while getopts :s:f:d:u:p: OPTION ; do
+while getopts :s:f:d:u:p:P: OPTION ; do
   case "$OPTION" in
     s)   
          source=$OPTARG
@@ -23,13 +25,15 @@ while getopts :s:f:d:u:p: OPTION ; do
          echo "Using $OPTARG as ftp user"
          ;;
     p)   ftppass=$OPTARG;;
+    P)   ftppass=$(cat "$OPTARG");;
     *)   echo "Unknown parameter"
          exit 1
          ;;
   esac
 done
 
-umask 000
+# backups must not be readable or writable by other local users
+umask 077
 mnt_dir="/tmp/backupmnt/"
 day=`LC_ALL=C date +%A`
 
@@ -37,7 +41,7 @@ cd /tmp
 
 mkdir -p /tmp/backupmnt/
 
-chmod -R 4777 backupmnt/
+chmod 700 backupmnt/
 
 echo 
 echo ordner fuer $source mounten...
@@ -47,7 +51,7 @@ if mountpoint -q $mnt_dir ; then
 else
     echo "Attempting to mount with SSHFS..."
     # Added error checking for mount command
-    if echo $ftppass | sshfs -o reconnect,ServerAliveInterval=15,ServerAliveCountMax=3,noforget,allow_other,password_stdin $ftpuser@$ftpserver:$rsyncdir/ $mnt_dir ; then
+    if printf '%s\n' "$ftppass" | sshfs -o reconnect,ServerAliveInterval=15,ServerAliveCountMax=3,noforget,password_stdin $ftpuser@$ftpserver:$rsyncdir/ $mnt_dir ; then
         echo "Mount successful"
     else
         echo "Mount failed - aborting backup"
@@ -71,6 +75,7 @@ if mountpoint -q $mnt_dir ; then
     umount -l $mnt_dir
 fi
 
-rm -R /tmp/backupmnt/
+# rmdir only: rm -R on a still-mounted sshfs would delete the remote backups
+rmdir /tmp/backupmnt/ 2>/dev/null || echo "WARNING: /tmp/backupmnt not removed (not empty or still mounted)"
 
 echo 

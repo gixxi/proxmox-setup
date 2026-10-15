@@ -8,7 +8,8 @@ usage() {
     echo "Usage: $0 -f <host> -u <user> -p <password> -d <remote_base_dir> -s <remote_src_rel> -t <local_target_dir>" >&2
     echo "  -f  Remote host (SSH/SFTP server used with sshfs)" >&2
     echo "  -u  SSH user" >&2
-    echo "  -p  SSH password (passed to sshfs via stdin)" >&2
+    echo "  -p  SSH password (passed to sshfs via stdin; visible in ps — prefer -P)" >&2
+    echo "  -P  file containing the SSH password (mode 600)" >&2
     echo "  -d  Remote directory to mount (e.g. path on server after user@host:)" >&2
     echo "  -s  Source path relative to the mount (directory to pull from)" >&2
     echo "  -t  Local directory to restore into (created if missing)" >&2
@@ -24,11 +25,12 @@ remote_src=""
 local_target=""
 mnt_dir="/tmp/restoremnt_sshfs"
 
-while getopts :f:u:p:d:s:t:m:h OPTION; do
+while getopts :f:u:p:P:d:s:t:m:h OPTION; do
     case "$OPTION" in
         f) ftpserver=$OPTARG ;;
         u) ftpuser=$OPTARG ;;
         p) ftppass=$OPTARG ;;
+        P) ftppass=$(cat "$OPTARG") ;;
         d) rsyncdir=$OPTARG ;;
         s) remote_src=$OPTARG ;;
         t) local_target=$OPTARG ;;
@@ -43,7 +45,7 @@ if [ -z "$ftpserver" ] || [ -z "$ftpuser" ] || [ -z "$ftppass" ] || [ -z "$rsync
     usage
 fi
 
-umask 000
+umask 022
 mounted=0
 
 cleanup() {
@@ -61,7 +63,7 @@ cleanup() {
 trap cleanup EXIT
 
 mkdir -p "$mnt_dir"
-chmod -R 4777 "$mnt_dir" 2>/dev/null || chmod 1777 "$mnt_dir" 2>/dev/null || true
+chmod 700 "$mnt_dir"
 
 echo "Mounting ${ftpuser}@${ftpserver}:${rsyncdir}/ -> $mnt_dir ..."
 if mountpoint -q "$mnt_dir"; then
@@ -69,7 +71,7 @@ if mountpoint -q "$mnt_dir"; then
     exit 1
 fi
 
-if echo "$ftppass" | sshfs -o reconnect,ServerAliveInterval=15,ServerAliveCountMax=3,noforget,allow_other,password_stdin \
+if echo "$ftppass" | sshfs -o reconnect,ServerAliveInterval=15,ServerAliveCountMax=3,noforget,password_stdin \
     "${ftpuser}@${ftpserver}:${rsyncdir}/" "$mnt_dir"; then
     echo "Mount successful."
     mounted=1

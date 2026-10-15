@@ -104,7 +104,7 @@ firewall:
 
 ### 1. Package Installation
 - Installs `cloud-init`, `yq`, `zfsutils-linux`, `docker.io`, `docker-compose-plugin`
-- Installs `nginx`, `certbot`, `ufw`, `fail2ban`, `logwatch`, and other utilities
+- Installs `nginx`, `certbot`, `fail2ban`, `logwatch`, and other utilities
 - Updates system packages
 
 ### 2. User Management
@@ -150,7 +150,7 @@ firewall:
 - All scripts located in `/opt/scripts/operations/`
 
 ### 9. Security Hardening
-- Configures UFW firewall with default deny incoming
+- Configures the iptables firewall (`../2_infrastructure/setup_firewall.sh docker-public`; SSH sources via `FIREWALL_ADMIN_SOURCES`, default any)
 - Sets up fail2ban for SSH protection
 - Configures logwatch for system monitoring
 - Creates sudoers rules for workload group

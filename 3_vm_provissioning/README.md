@@ -63,19 +63,23 @@ systemctl disable docker
 
 ### Application Service VM
 
-When provisioning a VM intended to run application services to disable the nginx service as well as extending the firewall rules to allow machine-to-machine communication for TCP on ports 8080-8090 (used for the httpkit clojure server), 18080-18090 (used for clojure repl) and 28080-28090 (used for couchdb). The rules are inserted first to ensure that any **deny** rules are overridden:
+Application VMs disable nginx (the bastion terminates TLS) and get the `app-vm` firewall profile
+(`../2_infrastructure/setup_firewall.sh`, iptables — ufw is not used anymore):
+
+- SSH only from `ADMIN_SOURCES`
+- containers reachable only from the bastion (`BASTION_SOURCES`) on the app port 8080 (httpkit)
+- nREPL (4050 → 18080-18090) and CouchDB (5984 → 28080-28090) are **not** reachable over the
+  network at all: the Makefile (`../lib/vlic_runner_makefile.sh`) binds them to 127.0.0.1.
+  Use an SSH tunnel: `ssh -L 18080:127.0.0.1:18080 root@<vm>`
+
+Both nREPL and CouchDB 1.x without admin are remote code execution; the former
+`ufw allow 18080:18090/tcp` / `28080:28090/tcp` rules exposed them to the whole network
+(and ufw does not even filter Docker-published ports).
 
 ```bash
-systemctl disable nginx
-ufw allow 8080:8090/tcp
-ufw allow 18080:18090/tcp
-ufw allow 28080:28090/tcp
-```
-
-... or call the script restrict.sh with the following parameters:
-
-```bash
-./restrict.sh <ip_address> <app or bastian>
+ADMIN_SOURCES="116.203.216.1 5.161.184.133 192.168.1.0/24" BASTION_SOURCES="<bastion ip>" \
+CIRCLECI_APIKEY=… ./restrict.sh <ip_address> app
+ADMIN_SOURCES="…" ./restrict.sh <ip_address> bastian
 ```
 
 

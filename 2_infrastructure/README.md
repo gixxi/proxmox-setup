@@ -80,28 +80,28 @@ chmod 700 /home/$USERN/.ssh
 chmod 600 /home/$USERN/.ssh/authorized_keys
 ```
 
-### Install requirements and install UFW
+### Install requirements and the firewall
 
-#### UFW only necessary for non-proxmox servers
+### Firewall (iptables, replaces ufw)
 
-### Setup UFW (Ubuntu Firewall)
+All hosts use `setup_firewall.sh` (in this folder) with a profile: `proxmox`, `bastion`, `app-vm`
+or `docker-public`. ufw is no longer used — on Docker hosts it does not see published container
+ports at all (rocklog-vlic `doc/security/incident-2026-10-15-hub16.md`). The script only manages its
+own chains plus `DOCKER-USER`, never Docker's chains or NAT, covers IPv6, and rolls back
+automatically unless you confirm from a second SSH session.
 
 als **root**
 
-Install
-
-> apt-get install ufw
-
-Setup rules
-
 ```
-/sbin/ufw allow ssh &&
-/sbin/ufw allow http &&
-/sbin/ufw allow https &&
-/sbin/ufw allow 60000:61000/udp &&
-/sbin/ufw enable &&
-/sbin/ufw status verbose
+# preview
+ADMIN_SOURCES="116.203.216.1 5.161.184.133 192.168.1.0/24" ./setup_firewall.sh proxmox --dry-run
+# apply, confirm within 60 s, persist (systemd unit rocklog-firewall.service), switch off ufw
+ADMIN_SOURCES="116.203.216.1 5.161.184.133 192.168.1.0/24" ./setup_firewall.sh proxmox --install --disable-ufw
+apt purge ufw          # once confirmed
+./setup_firewall.sh status
 ```
+
+Settings are stored in `/etc/rocklog-firewall.conf`; see the header of `setup_firewall.sh`.
 
 ## Install necessary tools
 
@@ -144,8 +144,11 @@ usermod -aG docker lambdaroyal-anon
 ## Update permissions in current session 
 newgrp docker
 
-## Allow access to docker socket
-chmod 666 /var/run/docker.sock
+## Docker socket
+
+Do **not** `chmod 666 /var/run/docker.sock`: every local user and every process could then start a
+privileged container, i.e. become root. Membership in the `docker` group (above) is root-equivalent
+as well — grant it only to admin accounts. Log out and in again instead of loosening the socket.
 
 # Einrichtung Nginx
 

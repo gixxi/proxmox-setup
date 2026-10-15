@@ -107,7 +107,6 @@ install_packages() {
         nginx \
         certbot \
         python3-certbot-nginx \
-        ufw \
         rsync \
         curl \
         wget \
@@ -631,24 +630,17 @@ EOF
 # Function to configure firewall
 configure_firewall() {
     print_header "Configuring firewall"
-    
-    # Reset UFW to defaults
-    ufw --force reset
-    
-    # Set default policies
-    ufw default deny incoming
-    ufw default allow outgoing
-    
-    # Allow SSH
-    ufw allow ssh
-    
-    # Allow HTTP and HTTPS
-    ufw allow 80/tcp
-    ufw allow 443/tcp
-    
-    # Enable UFW
-    ufw --force enable
-    
+
+    # iptables via the shared Rocklog firewall (replaces ufw — Docker-published ports bypass ufw).
+    # SSH sources: FIREWALL_ADMIN_SOURCES, default "any" (= previous "ufw allow ssh").
+    local fw
+    fw="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../2_infrastructure/setup_firewall.sh"
+    if [ ! -f "$fw" ]; then
+        print_error "setup_firewall.sh not found at $fw"
+        return 1
+    fi
+    ADMIN_SOURCES="${FIREWALL_ADMIN_SOURCES:-any}" bash "$fw" docker-public --yes --install --disable-ufw
+
     print_status "Firewall configured successfully"
 }
 

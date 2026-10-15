@@ -1,160 +1,50 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# Create and deploy the vlic_runner Makefile to a Proxmox app VM.
+#
+# Usage: ./create_makefile.sh <vm_ip> [circleci_apikey]
+#        CIRCLECI_APIKEY=… ./create_makefile.sh <vm_ip>   (preferred: key stays out of ps and shell history)
+#
+# The Makefile content lives in ../lib/vlic_runner_makefile.sh (shared with
+# public_cloud_vm_provisioning/2_create_makefile.sh). On an app VM the app port is published on
+# <vm_ip>, because the bastion's nginx proxies to <vm_ip>:<port>; nREPL and CouchDB stay on 127.0.0.1.
 
-# Create Makefile Script for VM Provisioning
-# Usage: ./create_makefile.sh <ip_address> [circleci_apikey]
+set -euo pipefail
 
-# Check if the correct number of arguments are provided
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=../lib/vlic_runner_makefile.sh
+. "$SCRIPT_DIR/../lib/vlic_runner_makefile.sh"
+
 if [ $# -lt 1 ] || [ $# -gt 2 ]; then
-    echo "Usage: $0 <ip_address> [circleci_apikey]"
-    echo "  ip_address     - Target VM IP address"
-    echo "  circleci_apikey - Optional CircleCI API key (will prompt for manual entry if not provided)"
+    echo "Usage: $0 <vm_ip> [circleci_apikey]"
+    echo "  vm_ip            Target VM IP address (also the address the app port is published on)"
+    echo "  circleci_apikey  Optional; better pass it as env CIRCLECI_APIKEY. Without a key an existing"
+    echo "                   .circleci_apikey on the VM (or a key inlined in its old Makefile) is kept."
     exit 1
 fi
 
 IP=$1
-CIRCLECI_APIKEY=$2
+CIRCLECI_APIKEY=${2:-${CIRCLECI_APIKEY:-}}
+RUNNER_DIR=/var/vlic/rocklog-vlic-docker/vlic_runner
 
-echo "Creating and deploying Makefile to $IP..."
+makefile=$(mktemp)
+trap 'rm -f "$makefile"' EXIT
+render_vlic_runner_makefile CORES=4 SWAP_HEADROOM_GB=8 APP_BIND="$IP" > "$makefile"
 
-# Create Makefile using a different approach
+echo "Deploying Makefile to root@$IP:$RUNNER_DIR/Makefile"
+ssh "root@$IP" "mkdir -p $RUNNER_DIR && cd $RUNNER_DIR && $VLIC_RUNNER_KEY_MIGRATE_CMD"
+scp "$makefile" "root@$IP:$RUNNER_DIR/Makefile"
+
 if [ -n "$CIRCLECI_APIKEY" ]; then
-    cat > /tmp/makefile_content << EOF
-CIRCLECI_APIKEY := $CIRCLECI_APIKEY
-EOF
-else
-    cat > /tmp/makefile_content << 'EOF'
-CIRCLECI_APIKEY := <circleci api key, ask the team for the key>
-EOF
+    printf '%s\n' "$CIRCLECI_APIKEY" | ssh "root@$IP" "cd $RUNNER_DIR && $VLIC_RUNNER_KEY_WRITE_CMD"
+    echo "✓ CircleCI key stored in $RUNNER_DIR/.circleci_apikey (mode 600)"
+elif ! ssh "root@$IP" "test -s $RUNNER_DIR/.circleci_apikey"; then
+    echo "NOTE: no CircleCI key on $IP — downloads need: CIRCLECI_APIKEY=… $0 $IP"
 fi
 
-# Append the rest of the Makefile content
-cat >> /tmp/makefile_content << 'EOF'
-VERSION := v12
-current_dir := $(shell pwd)
-
-ifndef VLIC_PORT
-	VLIC_PORT := 8080
-endif
-
-ifndef COUCHDB_PORT
-	COUCHDB_PORT := 5984
-endif
-
-ifndef CORES
-	CORES := 4
-endif
-
-ifndef Xmx
-	Xmx := 4g
-endif
-
-# Swap headroom in GB (operand) — overridable
-ifndef SWAP_HEADROOM_GB
-	SWAP_HEADROOM_GB := 8
-endif
-ifndef HEAP_HEADROOM
-	HEAP_HEADROOM := 2
-endif
-
-# Memory management parameters - will be calculated based on Xmx if not set
-ifndef MEMORY_RESERVATION_GB
-	MEMORY_RESERVATION_GB := 0
-endif
-
-JAVA_HEAP=$(Xmx)
-HEAP_NUM=$(JAVA_HEAP:g=)
-
-
-# Computed totals (note: := so they expand once, now, with HEAP_NUM known)
-DOCKER_MEMORY      := $(shell echo $$(( $(HEAP_NUM) + $(HEAP_HEADROOM) )))g
-SWAP_TOTAL_GB      := $(shell echo $$(( $(HEAP_NUM) + $(SWAP_HEADROOM_GB) + $(HEAP_HEADROOM) )))
-DOCKER_SWAP_MEMORY := $(SWAP_TOTAL_GB)g
-
-# Validate and calculate memory reservation
-MIN_RESERVATION_GB := $(shell echo $$(( $(HEAP_NUM) + 1 )))
-
-ifeq ($(MEMORY_RESERVATION_GB),0)
-	MEMORY_RESERVATION_GB := $(shell echo $$(( $(HEAP_NUM) + 1 )))
-endif
-
-RESERVATION_CHECK := $(shell if [ $(MEMORY_RESERVATION_GB) -lt $(MIN_RESERVATION_GB) ]; then echo "ERROR"; fi)
-
-DOCKER_MEMORY_RESERVATION := $(MEMORY_RESERVATION_GB)g
-SWAP_CONFIG := --memory-swap=$(DOCKER_SWAP_MEMORY)
-
-ifndef IMAGE
-	IMAGE := gixxi/vlic_runner:$(VERSION)
-endif
-
-
-ifndef CONT_NAME
-	CONT_NAME := $(shell date +%s | sha256sum | base64 | head -c 32)
-endif
-
-
-persist:
-	-mkdir $(CONT_NAME)
-	-mkdir $(CONT_NAME)/data
-	-mkdir $(CONT_NAME)/tmp
-	-mkdir $(CONT_NAME)/tmp/vlic
-	-mkdir $(CONT_NAME)/log
-	-mkdir $(CONT_NAME)/log/evictor
-
-extract: persist
-	test -f rocklog-vlic-$(BUILD).tar.gz || curl -H "Circle-Token: $(CIRCLECI_APIKEY)" https://circleci.com/api/v1.1/project/github/lambdaroyal/rocklog-vlic/$(BUILD)/artifacts | grep -o 'https://[^"]*' | wget --verbose --header "Circle-Token: $(CIRCLECI_APIKEY)" --input-file -
-	-cp rocklog-vlic.tar.gz rocklog-vlic-$(BUILD).tar.gz 
-	-cp rocklog-vlic-$(BUILD).tar.gz $(CONT_NAME)/tmp/vlic/rocklog-vlic.tar.gz
-	-rm rocklog-vlic.tar.gz
-
-bash: persist
-	echo "Starting bash in new container"
-	docker run -e LANG=C.UTF-8 -e LC_ALL=C.UTF-8 --name=$(CONT_NAME) -it --restart='always' -p $(COUCHDB_PORT):5984 -p 5987:5986 -p $(VLIC_PORT):8080 -v $(current_dir)/$(CONT_NAME)/data:/data -v $(current_dir)/$(CONT_NAME)/tmp/vlic:/tmp/vlic -v $(current_dir)/$(CONT_NAME)/log ${IMAGE} bash
-
-couchdb: persist
-	echo "Starting bash in new container"
-	docker run -e LANG=C.UTF-8 -e LC_ALL=C.UTF-8 --name=$(CONT_NAME) -it -p $(COUCHDB_PORT):5984 -p $(VLIC_PORT):8080 -v $(current_dir)/$(CONT_NAME)/data:/data -v $(current_dir)/$(CONT_NAME)/tmp/vlic:/tmp/vlic -v $(current_dir)/$(CONT_NAME)/log ${IMAGE} couchdb bash
-
-64bit: extract
-	echo "Building container with unique data dir $(CONT_NAME) with archive $(ARCHIVE) for customer data, image=$(IMAGE) -Xmx=$(Xmx) cores=$(CORES)"
-	echo "Memory config: limit=$(DOCKER_MEMORY), reservation=$(DOCKER_MEMORY_RESERVATION), swap=$(ENABLE_SWAP)"
-	@if [ "$(RESERVATION_CHECK)" = "ERROR" ]; then \
-		echo "ERROR: MEMORY_RESERVATION_GB ($(MEMORY_RESERVATION_GB)GB) must be at least Xmx + 1GB ($(MIN_RESERVATION_GB)GB)"; \
-		echo "Current Java heap: $(HEAP_NUM)GB, minimum reservation required: $(MIN_RESERVATION_GB)GB"; \
-		echo "Please set MEMORY_RESERVATION_GB=$(MIN_RESERVATION_GB) or higher"; \
-		exit 1; \
-	fi
-	-docker rm -f $(CONT_NAME)
-	docker run -e LANG=C.UTF-8 -e LC_ALL=C.UTF-8 --rm --name=$(CONT_NAME) \
-		-p $(VLIC_PORT):8080 -p 1$(VLIC_PORT):4050 -p 2$(VLIC_PORT):5984 \
-		-v $(current_dir)/$(CONT_NAME)/.ssh:/.ssh \
-		-v $(current_dir)/$(CONT_NAME)/data:/data \
-		-v $(current_dir)/$(CONT_NAME)/tmp/vlic:/tmp/vlic \
-		-v $(current_dir)/$(CONT_NAME)/log:/usr/local/var/log/couchdb/ \
-		-v $(current_dir)/$(CONT_NAME)/log/evictor:/log \
-		-v /etc/localtime:/etc/localtime:ro \
-		--cpus="$(CORES)" --log-driver=local \
-		--memory=$(DOCKER_MEMORY) --memory-reservation=$(DOCKER_MEMORY_RESERVATION) \
-		$(SWAP_CONFIG) \
-		$(IMAGE) couchdb 64bit $(Xmx)
-EOF
-
-# Deploy the Makefile to the target VM
-echo "Deploying Makefile to root@$IP:/var/vlic/rocklog-vlic-docker/vlic_runner/Makefile"
-scp /tmp/makefile_content root@$IP:/var/vlic/rocklog-vlic-docker/vlic_runner/Makefile
-
-if [ $? -eq 0 ]; then
-    echo "✓ Makefile successfully deployed to $IP"
-    echo "  Location: /var/vlic/rocklog-vlic-docker/vlic_runner/Makefile"
-    echo ""
-    echo "Usage examples:"
-    echo "  ssh root@$IP 'cd /var/vlic/rocklog-vlic-docker/vlic_runner && make 64bit Xmx=13g ENABLE_SWAP=true'"
-    echo "  ssh root@$IP 'cd /var/vlic/rocklog-vlic-docker/vlic_runner && make 64bit BUILD=4858 CONT_NAME=mycontainer Xmx=8g'"
-else
-    echo "✗ Failed to deploy Makefile to $IP"
-    exit 1
-fi
-
-# Clean up temporary file
-rm /tmp/makefile_content
-
-echo "Makefile deployment completed successfully!" 
+echo "✓ Makefile successfully deployed to $IP"
+echo "  App port published on $IP (bastion target); nREPL/CouchDB on 127.0.0.1 only"
+echo ""
+echo "Usage examples:"
+echo "  ssh root@$IP 'cd $RUNNER_DIR && make 64bit Xmx=13g ENABLE_SWAP=true'"
+echo "  ssh root@$IP 'cd $RUNNER_DIR && make 64bit BUILD=4858 CONT_NAME=mycontainer Xmx=8g'"
+echo "  nREPL from your machine: ssh -L 18080:127.0.0.1:18080 root@$IP, then connect to localhost:18080"

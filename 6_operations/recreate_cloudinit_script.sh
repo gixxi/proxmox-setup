@@ -329,6 +329,8 @@ echo "✅ Cloud-Init script created successfully at ${CUSTOM_SCRIPT_PATH}"
 
 # Attach the Cloud-Init Script to the VM
 echo "INFO: Attaching Cloud-Init script ${CUSTOM_SCRIPT_NAME} to VM $VM_ID..."
+# the snippet contains the root password in clear text — root-only
+chmod 600 "${CUSTOM_SCRIPT_PATH}"
 qm set $VM_ID --cicustom "user=local:snippets/${CUSTOM_SCRIPT_NAME}"
 if [ $? -ne 0 ]; then
     echo "ERROR: Failed to attach cloud-init script for VM $VM_ID."

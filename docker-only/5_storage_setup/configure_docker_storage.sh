@@ -154,6 +154,7 @@ cat > "$DOCKER_DAEMON_CONFIG" << EOF
   },
   "live-restore": true,
   "userland-proxy": false,
+  "ip": "127.0.0.1",
   "experimental": false,
   "metrics-addr": "127.0.0.1:9323",
   "insecure-registries": [],

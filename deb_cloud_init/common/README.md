@@ -108,29 +108,16 @@ PermitEmptyPasswords no
 UsePAM yes
 ```
 
-### **Firewall Configuration (`configs/firewall_config`)**
+### **Firewall Configuration**
 
-UFW firewall rules template.
+ufw is no longer used. All hosts use the shared iptables firewall
+`2_infrastructure/setup_firewall.sh` (profiles `proxmox`, `bastion`, `app-vm`, `docker-public`):
 
 ```bash
-# UFW Firewall Configuration
-# Allow SSH from specific networks
-ufw allow from 203.0.113.0/24 to any port 22 proto tcp
-ufw allow from 192.168.1.0/24 to any port 22 proto tcp
-
-# Allow web services
-ufw allow 80/tcp
-ufw allow 443/tcp
-
-# Allow application ports
-ufw allow 8080:8090/tcp
-
-# Allow Mosh
-ufw allow 60000:61000/udp
-
-# Enable firewall
-ufw --force enable
+ADMIN_SOURCES="203.0.113.0/24 192.168.1.0/24" ./setup_firewall.sh docker-public --install --disable-ufw
 ```
+
+Application ports are not opened on the host: containers publish on 127.0.0.1 and nginx proxies.
 
 ### **Docker Configuration (`configs/docker_config`)**
 

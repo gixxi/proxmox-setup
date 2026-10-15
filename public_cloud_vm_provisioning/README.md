@@ -13,21 +13,22 @@ Small scripts to configure a **local machine** or **single public cloud VM** (De
 | Script | Purpose |
 |--------|---------|
 | `1_setup_tools.sh` | Installs `nginx`, applies the shared `nginx.conf`, restarts Nginx, enables Docker, runs a basic Docker check. |
-| `2_create_makefile.sh` | Same Makefile content as `3_vm_provissioning/create_makefile.sh`, written to `~/vlic_runner/Makefile` (creates `~/vlic_runner` if missing). No VM IP or `scp`—runs on the machine where you execute it. |
+| `2_create_makefile.sh` | Writes `~/vlic_runner/Makefile` from the shared generator `../lib/vlic_runner_makefile.sh` (same source as `3_vm_provissioning/create_makefile.sh`). All container ports on **127.0.0.1**; CircleCI key in `.circleci_apikey` (mode 600). |
 | `3_restore_from_ftp.sh` | Mounts a remote directory with **sshfs** (same style as `4_running_planet_rocklog/backup-sshfs/do_backup_for_system.sh`) and **rsync**s from a path under that mount into a local target directory. |
 | `4_create_nginx_proxy_configuration.sh` | Nginx vhost for **service** `<subdomain>.<domain>`; TLS paths from cert issued for **`<server>.<domain>`** (`certbot certificates -d …`). Proxy to **127.0.0.1:port**. **Root only.** |
 | `5_create_default_nginx_configuration.sh` | Writes **`/etc/nginx/sites-enabled/default`** as `default_server` for one FQDN; TLS via **`certbot certificates -d <fqdn>`**; backs up `sites-enabled` to **`sites-enabled.bak`** once; includes **`locations/*.conf`**. **Root only.** |
 
 ### `2_create_makefile.sh` (normal user)
 
-Optional CircleCI token as the only argument (otherwise a placeholder line is written):
+Optional CircleCI token, preferably via the environment (keeps it out of `ps` and shell history).
+A key inlined by older versions of the Makefile is migrated to `.circleci_apikey` automatically.
 
 ```bash
 cd /path/to/proxmox-setup/public_cloud_vm_provisioning
-chmod +x 2_create_makefile.sh   # if needed
-./2_create_makefile.sh
-# or: ./2_create_makefile.sh "$CIRCLECI_TOKEN"
+CIRCLECI_APIKEY="$CIRCLECI_TOKEN" ./2_create_makefile.sh
 ```
+
+Firewall for such a host: `ADMIN_SOURCES="…" ../2_infrastructure/setup_firewall.sh docker-public --install --disable-ufw`.
 
 Then use Make from `~/vlic_runner` (see the script’s printed examples).
 

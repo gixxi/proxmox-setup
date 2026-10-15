@@ -609,6 +609,8 @@ EOF
 # 12. Attach the Cloud-Init Script to the VM
 echo "INFO: Attaching Cloud-Init script ${CUSTOM_SCRIPT_NAME} to VM $VM_ID..."
 # Use 'local' storage ID for snippets
+# the snippet contains the root password in clear text — root-only
+chmod 600 "${CUSTOM_SCRIPT_PATH}"
 qm set $VM_ID --cicustom "user=local:snippets/${CUSTOM_SCRIPT_NAME}"
 if [ $? -ne 0 ]; then
     echo "ERROR: Failed to attach cloud-init script for VM $VM_ID."
@@ -639,7 +641,7 @@ echo " Storage:        $STORAGE"
 echo " Bridge:         $BRIDGE"
 echo " Timezone:       $TIMEZONE"
 echo " SSH User:       $CI_USER"
-echo " SSH Password:   $CI_PASSWORD"
+echo " SSH Password:   (as given with --password, not printed)"
 echo " SSH PubKey:     $SSH_PUB_KEY_PATH"
 echo "=================================================="
 echo ""
