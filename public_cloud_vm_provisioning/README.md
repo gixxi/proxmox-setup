@@ -28,7 +28,7 @@ cd /path/to/proxmox-setup/public_cloud_vm_provisioning
 CIRCLECI_APIKEY="$CIRCLECI_TOKEN" ./2_create_makefile.sh
 ```
 
-Firewall for such a host: `ADMIN_SOURCES="…" ../2_infrastructure/setup_firewall.sh docker-public --install --disable-ufw`.
+Firewall for such a host: see [Firewall (`docker-public`)](#firewall-docker-public) below.
 
 Then use Make from `~/vlic_runner` (see the script’s printed examples).
 
@@ -123,3 +123,52 @@ sudo /tmp/public_cloud_vm_provisioning/1_setup_tools.sh
 - Docker: `docker ps`, `docker info`
 
 If Nginx fails its config test, the script restores `nginx.conf` from `nginx.conf.bak` when a backup exists.
+
+## Firewall (`docker-public`)
+
+A single public Docker host (e.g. hub16) uses the `docker-public` profile of
+`../2_infrastructure/setup_firewall.sh` (iptables + ip6tables; replaces ufw).
+
+| Need | Covered by |
+|------|------------|
+| SSH (22) | only from `ADMIN_SOURCES` |
+| HTTP/HTTPS (80, 443) | public (`OPEN_TCP`, default) |
+| mosh (60000–61000/udp) | public by default; restrict with `MOSH_SOURCES` |
+| nginx on the host → containers (e.g. `127.0.0.1:8081`) | works: host-local traffic never enters through the uplink, so the container guard does not apply |
+| internet → container ports (8080–8085, 3000–3005, …) | **blocked** — only via nginx. Exception: `PUBLIC_CONTAINER_PORTS="8080"` (container port, after DNAT) |
+| containers → host | only on the open ports (80/443) |
+
+`ADMIN_SOURCES` is a space-separated list of IPv4/IPv6 addresses or CIDR ranges. Example with two
+admin IPs allowed to log in via SSH (mosh restricted to the same two):
+
+```bash
+cd /path/to/proxmox-setup/2_infrastructure
+
+# 1. preview — changes nothing
+ADMIN_SOURCES="203.0.113.10 198.51.100.20" MOSH_SOURCES="203.0.113.10 198.51.100.20" \
+  ./setup_firewall.sh docker-public --dry-run
+
+# 2. apply. Keep this session open; from a SECOND terminal test SSH/mosh login and an app via its
+#    domain, then type "yes". No "yes" within 60 s or a dropped session = automatic rollback.
+ADMIN_SOURCES="203.0.113.10 198.51.100.20" MOSH_SOURCES="203.0.113.10 198.51.100.20" \
+  ./setup_firewall.sh docker-public --install --disable-ufw
+
+# 3. checks
+curl -sI http://127.0.0.1:8081/ | head -1                   # nginx -> container path
+journalctl -k | grep -E 'FW-CT-DROP|FW-IN-DROP' | tail      # anything legitimate being blocked?
+./setup_firewall.sh status
+
+# 4. once confirmed
+apt purge ufw
+```
+
+Notes:
+
+- Use `ADMIN_SOURCES=any` to keep SSH open to everyone (prints a warning). Leave `MOSH_SOURCES`
+  unset to keep mosh public, e.g. when your client IP changes.
+- An IPv6 entry (`2001:db8::10`) allows SSH over IPv6 as well; with only IPv4 entries, SSH over
+  IPv6 is closed.
+- `--install` stores the settings in `/etc/rocklog-firewall.conf` and re-applies them at boot
+  (`rocklog-firewall.service`). To add a third IP later, rerun step 2 with the extended list —
+  or edit the file and run `rocklog-firewall apply`.
+- Ad-hoc `iptables` rules added during an incident are superseded and can be deleted afterwards.

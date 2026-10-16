@@ -103,6 +103,9 @@ apt purge ufw          # once confirmed
 
 Settings are stored in `/etc/rocklog-firewall.conf`; see the header of `setup_firewall.sh`.
 
+Worked example for a single public Docker host (several admin IPs, nginx → containers):
+[`../public_cloud_vm_provisioning/README.md` → Firewall (`docker-public`)](../public_cloud_vm_provisioning/README.md#firewall-docker-public).
+
 ## Install necessary tools
 
 > apt-get install emacs nano vim git xclip sudo ftp make supervisor lftp mosh nginx curl wget tmux openssh-server net-tools postgresql-client

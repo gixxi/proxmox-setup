@@ -176,7 +176,9 @@ gen_rules() {
     echo "$I -m limit --limit 6/minute -j LOG --log-prefix \"FW-IN-DROP \""
     echo "$I -j DROP"
 
-    # Egress guard for host processes (botnet scan targets)
+    # Egress guard for host processes (botnet scan targets). Replies first: a client whose *source*
+    # port happens to be 23/2323/5555 must still get its SYN-ACK from nginx.
+    echo "$O -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN"
     echo "$O -p tcp -m multiport --dports $SCAN_PORTS -m conntrack --ctstate NEW -j LOG --log-prefix \"EGRESS-SCAN \" --log-uid"
     echo "$O -p tcp -m multiport --dports $SCAN_PORTS -j REJECT"
 
@@ -299,10 +301,15 @@ cmd_status() {
         "$t" -L ROCKLOG-OUTPUT -nv --line-numbers 2>/dev/null || true
         "$t" -L DOCKER-USER -nv --line-numbers 2>/dev/null || true
     done
+    unit_state() { local s; s=$(systemctl is-enabled "$1" 2>/dev/null) || true; echo "${s:-not-installed}"; }
     echo "===== persistence"
-    echo "rocklog-firewall.service: $(systemctl is-enabled rocklog-firewall 2>/dev/null || echo not-installed)"
-    echo "netfilter-persistent:     $(systemctl is-enabled netfilter-persistent 2>/dev/null || echo not-installed)"
-    if command -v ufw >/dev/null; then echo "ufw: $(ufw status 2>/dev/null | head -1)"; fi
+    echo "rocklog-firewall.service: $(unit_state rocklog-firewall)"
+    echo "netfilter-persistent:     $(unit_state netfilter-persistent)"
+    if command -v ufw >/dev/null; then echo "ufw:                      $(ufw status 2>/dev/null | head -1)"
+    else echo "ufw:                      not installed"; fi
+    if "$(ipt 4)" -S INPUT | grep -q -- '-j ufw'; then
+        echo "note: leftover ufw jumps in INPUT (unreachable behind ROCKLOG-INPUT; gone after reboot)"
+    fi
 }
 
 cmd_apply() {   # boot / re-apply: settings from config, no confirmation
