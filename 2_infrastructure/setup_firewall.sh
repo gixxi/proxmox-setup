@@ -39,13 +39,18 @@
 #   PUBLIC_IF               uplink interface; default: interface of the default route
 #   SCAN_PORTS              egress guard: outbound TCP ports logged + blocked; default 23,2323,5555
 #   FORWARD_POLICY          DROP|ACCEPT|"" (unchanged); default proxmox DROP, others unchanged
+#   TCP_IPOPT_GUARD         yes|no; default yes. Drop IPv4 TCP packets carrying IP options in
+#                           raw/PREROUTING, before conntrack, routing and the TCP stack (trigger of
+#                           CVE-2026-98432; legitimate TCP never carries IPv4 options). All profiles,
+#                           also covers forwarded traffic to containers/VMs that passes iptables.
 #
 # DESIGN
-#   Only our own chains are (re)written: ROCKLOG-INPUT, ROCKLOG-OUTPUT and DOCKER-USER, via
-#   iptables-restore --noflush. Docker's chains, the nat table and VM NAT are never touched.
-#   INPUT/OUTPUT jump to our chains first; ROCKLOG-INPUT ends with DROP. Persistence is our own
-#   systemd unit (before docker.service), not netfilter-persistent, which would also save and
-#   restore Docker's dynamic rules.
+#   Only our own chains are (re)written: ROCKLOG-RAW (raw table, IPv4), ROCKLOG-INPUT,
+#   ROCKLOG-OUTPUT and DOCKER-USER, via iptables-restore --noflush. Docker's chains, the nat table
+#   and VM NAT are never touched. PREROUTING/INPUT/OUTPUT jump to our chains first; ROCKLOG-INPUT
+#   ends with DROP. Persistence is our own systemd unit (before docker.service), not
+#   netfilter-persistent, which would also save and restore Docker's dynamic rules. Rules added by
+#   hand with iptables are therefore NOT persistent — put them in here.
 
 set -euo pipefail
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -57,7 +62,8 @@ BACKUP_DIR=${BACKUP_DIR:-/var/backups/rocklog-firewall}
 LEGACY_HOOK=/etc/network/if-pre-up.d/iptables
 CONFIRM_SECS=${CONFIRM_SECS:-60}
 SETTINGS=(PROFILE ADMIN_SOURCES MOSH_SOURCES OPEN_TCP ADMIN_TCP CLUSTER_SOURCES BASTION_SOURCES
-          APP_CONTAINER_PORTS PUBLIC_CONTAINER_PORTS PUBLIC_IF SCAN_PORTS FORWARD_POLICY)
+          APP_CONTAINER_PORTS PUBLIC_CONTAINER_PORTS PUBLIC_IF SCAN_PORTS FORWARD_POLICY
+          TCP_IPOPT_GUARD)
 
 info() { echo "[firewall] $*"; }
 warn() { echo "[firewall] WARNING: $*" >&2; }
@@ -109,7 +115,7 @@ resolve_profile() {
         *) die "unknown profile '$PROFILE' (proxmox | bastion | app-vm | docker-public)" ;;
     esac
     : "${CLUSTER_SOURCES=}" "${BASTION_SOURCES=}" "${APP_CONTAINER_PORTS=8080}"
-    : "${PUBLIC_CONTAINER_PORTS=}" "${SCAN_PORTS=23,2323,5555}" "${FORWARD_POLICY=}"
+    : "${PUBLIC_CONTAINER_PORTS=}" "${SCAN_PORTS=23,2323,5555}" "${FORWARD_POLICY=}" "${TCP_IPOPT_GUARD=yes}"
     if [ -z "${PUBLIC_IF:-}" ]; then
         PUBLIC_IF=$(ip -o route show default 2>/dev/null | awk '{print $5; exit}')
     fi
@@ -124,6 +130,7 @@ resolve_profile() {
         [[ $p =~ ^[0-9]{1,5}(:[0-9]{1,5})?$ ]] || die "invalid port '$p'"
     done
     [[ ${FORWARD_POLICY} =~ ^(|DROP|ACCEPT)$ ]] || die "FORWARD_POLICY must be DROP, ACCEPT or empty"
+    [[ ${TCP_IPOPT_GUARD} =~ ^(yes|no)$ ]] || die "TCP_IPOPT_GUARD must be yes or no"
     [[ ${PUBLIC_IF} =~ ^[A-Za-z0-9._@-]*$ ]] || die "invalid PUBLIC_IF '$PUBLIC_IF'"
     if [ "$ADMIN_SOURCES" = any ]; then warn "SSH open to the whole internet (ADMIN_SOURCES=any)"; fi
 }
@@ -147,6 +154,15 @@ src() { [ "$1" = any ] || echo "-s $1 "; }
 # gen_rules <4|6> — iptables-restore input for one address family
 gen_rules() {
     local f=$1 s I=-A\ ROCKLOG-INPUT O=-A\ ROCKLOG-OUTPUT D=-A\ DOCKER-USER
+    if [ "$f" = 4 ] && [ "$TCP_IPOPT_GUARD" = yes ]; then
+        # IHL (low nibble of byte 0) > 5 = IP options present. TCP only: IGMP needs Router Alert.
+        local R="-A ROCKLOG-RAW -p tcp -m u32 --u32 \"0>>24&0xF=6:15\""
+        echo "*raw"
+        echo ":ROCKLOG-RAW - [0:0]"
+        echo "$R -m limit --limit 6/minute -j LOG --log-prefix \"FW-IPOPT-DROP \""
+        echo "$R -j DROP"
+        echo "COMMIT"
+    fi
     echo "*filter"
     echo ":ROCKLOG-INPUT - [0:0]"
     echo ":ROCKLOG-OUTPUT - [0:0]"
@@ -203,12 +219,20 @@ have_v6() { [ -f /proc/net/if_inet6 ] && command -v ip6tables-restore >/dev/null
 families() { echo 4; if have_v6; then echo 6; fi; }
 ipt() { if [ "$1" = 4 ]; then echo iptables; else echo ip6tables; fi; }
 
-# ensure_first <cmd> <builtin-chain> <target> — exactly one jump, at position 1
+# ensure_first <cmd> <table> <builtin-chain> <target> — exactly one jump, at position 1
 ensure_first() {
-    if [ "$("$1" -S "$2" | sed -n 2p)" != "-A $2 -j $3" ]; then
-        while "$1" -D "$2" -j "$3" 2>/dev/null; do :; done
-        "$1" -I "$2" 1 -j "$3"
+    if [ "$("$1" -t "$2" -S "$3" | sed -n 2p)" != "-A $3 -j $4" ]; then
+        remove_jumps "$@"
+        "$1" -t "$2" -I "$3" 1 -j "$4"
     fi
+}
+# remove_jumps <cmd> <table> <builtin-chain> <target>
+remove_jumps() { while "$1" -t "$2" -D "$3" -j "$4" 2>/dev/null; do :; done; }
+
+# drop_raw_guard — remove ROCKLOG-RAW (TCP_IPOPT_GUARD=no, or rollback to a ruleset without it)
+drop_raw_guard() {
+    remove_jumps iptables raw PREROUTING ROCKLOG-RAW
+    if iptables -t raw -F ROCKLOG-RAW 2>/dev/null; then iptables -t raw -X ROCKLOG-RAW; fi
 }
 
 apply_rules() {
@@ -216,8 +240,12 @@ apply_rules() {
     for f in $(families); do
         t=$(ipt "$f")
         gen_rules "$f" | "$t-restore" --noflush
-        ensure_first "$t" INPUT ROCKLOG-INPUT
-        ensure_first "$t" OUTPUT ROCKLOG-OUTPUT
+        if [ "$f" = 4 ]; then
+            if [ "$TCP_IPOPT_GUARD" = yes ]; then ensure_first "$t" raw PREROUTING ROCKLOG-RAW
+            else drop_raw_guard; fi
+        fi
+        ensure_first "$t" filter INPUT ROCKLOG-INPUT
+        ensure_first "$t" filter OUTPUT ROCKLOG-OUTPUT
         "$t" -P INPUT DROP
         [ -z "$FORWARD_POLICY" ] || "$t" -P FORWARD "$FORWARD_POLICY"
     done
@@ -229,6 +257,8 @@ rollback() {
     warn "rolling back to the previous ruleset"
     local f i=0
     for f in $(families); do "$(ipt "$f")-restore" < "${ROLLBACK_FILES[$i]}"; i=$((i + 1)); done
+    # iptables-restore only replaces the tables in the backup; raw is absent if it wasn't loaded
+    grep -q '^\*raw' "${ROLLBACK_FILES[0]}" || drop_raw_guard
     if [ "$UFW_WAS_ACTIVE" = yes ]; then ufw --force enable >/dev/null && info "ufw re-enabled"; fi
     die "not confirmed — previous ruleset restored"
 }
@@ -296,6 +326,10 @@ cmd_status() {
     for f in $(families); do
         t=$(ipt "$f")
         echo "===== $t"
+        if [ "$f" = 4 ]; then
+            "$t" -t raw -S PREROUTING | head -2
+            "$t" -t raw -L ROCKLOG-RAW -nv --line-numbers 2>/dev/null || echo "(ROCKLOG-RAW missing — TCP_IPOPT_GUARD off or not applied)"
+        fi
         "$t" -S INPUT | head -3; "$t" -S OUTPUT | head -2
         "$t" -L ROCKLOG-INPUT -nv --line-numbers 2>/dev/null || echo "(ROCKLOG-INPUT missing)"
         "$t" -L ROCKLOG-OUTPUT -nv --line-numbers 2>/dev/null || true
@@ -327,7 +361,7 @@ cmd_profile() {
         local f
         for f in 4 6; do
             echo "### $(ipt "$f")-restore --noflush"; gen_rules "$f"
-            echo "### then: INPUT/OUTPUT jump to ROCKLOG-INPUT/ROCKLOG-OUTPUT at position 1, INPUT policy DROP${FORWARD_POLICY:+, FORWARD policy $FORWARD_POLICY}"
+            echo "### then: $([ "$f" = 4 ] && [ "$TCP_IPOPT_GUARD" = yes ] && echo "raw PREROUTING -> ROCKLOG-RAW, ")INPUT/OUTPUT jump to ROCKLOG-INPUT/ROCKLOG-OUTPUT at position 1, INPUT policy DROP${FORWARD_POLICY:+, FORWARD policy $FORWARD_POLICY}"
         done
         return
     fi

@@ -35,6 +35,7 @@ executed code in a tenant container and used it for port scans.
 | 13 | low | `lein` and OpenTofu installer downloaded without checksum verification | `restrict.sh`, `setup_bastion_host.md` | open |
 | 14 | low | Image registry `hub5.planet-rocklog.com:5000` — verify TLS + authentication | supervisor template in `restrict.sh` | open — verify |
 | 15 | info | `provision_vm.sh` and `recreate_cloudinit_script.sh` share ~300 lines of cloud-init script | | open — extract into `lib/` like the Makefile |
+| 16 | critical | CVE-2026-98432 (2026-10): remote use-after-free in the Linux IPv4 TCP handshake, triggered by SYNs with IP options; kernels ≥ 4.4 | every host kernel (VMs, Proxmox nodes, public hosts) | **mitigated** — `ROCKLOG-RAW` drops IPv4 TCP with options on all profiles; **open** — fixed kernel + reboot per host (Debian 12 ≥ 6.1.190-1, 13 ≥ 6.12.113-1) |
 
 ## Rolling out on existing hosts
 

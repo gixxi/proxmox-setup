@@ -103,6 +103,13 @@ apt purge ufw          # once confirmed
 
 Settings are stored in `/etc/rocklog-firewall.conf`; see the header of `setup_firewall.sh`.
 
+All profiles also drop IPv4 TCP packets carrying IP options in `raw`/`PREROUTING` (chain
+`ROCKLOG-RAW`, log prefix `FW-IPOPT-DROP`) — the trigger of CVE-2026-98432; switch off with
+`TCP_IPOPT_GUARD=no`. Rules added by hand with `iptables …` are **not** persistent: the systemd unit
+only rebuilds the script's own chains and `netfilter-persistent` is disabled on purpose. Put
+permanent rules into `setup_firewall.sh`, then on each host re-run it with `--install` (or copy the
+script to `/usr/local/sbin/rocklog-firewall` and run `rocklog-firewall apply`).
+
 Worked example for a single public Docker host (several admin IPs, nginx → containers):
 [`../public_cloud_vm_provisioning/README.md` → Firewall (`docker-public`)](../public_cloud_vm_provisioning/README.md#firewall-docker-public).
 
