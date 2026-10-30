@@ -49,8 +49,9 @@ public_cloud_vm_provisioning/2_create_makefile.sh                         # publ
 # 2. Firewall, replacing ufw / the old iptables script
 ADMIN_SOURCES="…" [BASTION_SOURCES="…"] 2_infrastructure/setup_firewall.sh <profile> --install --disable-ufw
 apt purge ufw
-# 3. Verify from outside: only 22 (admin sources), 80/443 (+ profile ports) reachable
-nmap -Pn -p 1-65535 <ipv4>;  nmap -6 -Pn -p 1-65535 <ipv6>
+# 3. Verify: host state, then from outside: only 22 (admin sources), 80/443 (+ profile ports) reachable
+#    -> full procedure with expected results: 2_infrastructure/README.md, "Verify the firewall"
+nmap -Pn -p- <ipv4>;  nmap -6 -Pn -p- <ipv6>
 ```
 
 Hosts that run an existing Makefile in a different directory (e.g. hub16 in

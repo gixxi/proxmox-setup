@@ -162,6 +162,10 @@ journalctl -k | grep -E 'FW-CT-DROP|FW-IN-DROP' | tail      # anything legitimat
 apt purge ufw
 ```
 
+**Then verify from outside** — host state, external nmap scan and IP-options probe, with the
+expected results per profile:
+[`../2_infrastructure/README.md` → Verify the firewall](../2_infrastructure/README.md#verify-the-firewall).
+
 Notes:
 
 - Use `ADMIN_SOURCES=any` to keep SSH open to everyone (prints a warning). Leave `MOSH_SOURCES`
