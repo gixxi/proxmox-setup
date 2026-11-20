@@ -137,10 +137,14 @@ done
 # Override with environment variables if they exist
 GATEWAY="${GATEWAY_ENV:-$GATEWAY}"    # Allow environment override
 
-# Specific Debian image URL and name
-DEBIAN_IMAGE_URL="https://cloud.debian.org/images/cloud/bookworm/20250416-2084/debian-12-generic-amd64-20250416-2084.qcow2"
-IMAGE_NAME="debian-12-generic-amd64-20250416-2084.qcow2"
-DOWNLOAD_PATH="/tmp/${IMAGE_NAME}" # Local path to download the image
+# Debian 13 (trixie) generic cloud image. "latest" is the newest build; the local copy is named after
+# its SHA512 so a newer build is downloaded automatically and a stale or corrupt copy is never reused.
+# Override DEBIAN_IMAGE_BASE to pin a specific build directory (e.g. .../trixie/<yyyymmdd-nnnn>).
+DEBIAN_IMAGE_BASE="${DEBIAN_IMAGE_BASE:-https://cloud.debian.org/images/cloud/trixie/latest}"
+DEBIAN_IMAGE_FILE="debian-13-generic-amd64.qcow2"
+DEBIAN_IMAGE_URL="${DEBIAN_IMAGE_BASE}/${DEBIAN_IMAGE_FILE}"
+IMAGE_CACHE_DIR="${IMAGE_CACHE_DIR:-/var/lib/vz/template/cloud-images}"
+# IMAGE_NAME and DOWNLOAD_PATH are set in step 2 once the checksum is known
 
 # --- Parameter Validation ---
 # Check for mandatory parameters
@@ -268,19 +272,32 @@ fi
 #     exit 1
 # fi
 
-# 2. Download Debian Cloud Image if necessary
-echo "INFO: Checking for Debian cloud image..."
-if [ ! -f "${DOWNLOAD_PATH}" ]; then
-  echo "INFO: Debian cloud image not found locally. Downloading to ${DOWNLOAD_PATH}..."
-  wget -q --show-progress -O "${DOWNLOAD_PATH}" "${DEBIAN_IMAGE_URL}"
-  if [ $? -ne 0 ]; then
+# 2. Download Debian Cloud Image if necessary (verified against the published SHA512SUMS)
+echo "INFO: Checking for Debian cloud image (${DEBIAN_IMAGE_URL})..."
+IMAGE_SHA512=$(wget -q -O - "${DEBIAN_IMAGE_BASE}/SHA512SUMS" | awk -v f="${DEBIAN_IMAGE_FILE}" '$2 == f {print $1}')
+if ! [[ "${IMAGE_SHA512}" =~ ^[0-9a-f]{128}$ ]]; then
+    echo "ERROR: Could not read the SHA512 of ${DEBIAN_IMAGE_FILE} from ${DEBIAN_IMAGE_BASE}/SHA512SUMS."
+    exit 1
+fi
+mkdir -p "${IMAGE_CACHE_DIR}"
+IMAGE_NAME="debian-13-generic-amd64-${IMAGE_SHA512:0:16}.qcow2"
+DOWNLOAD_PATH="${IMAGE_CACHE_DIR}/${IMAGE_NAME}"
+if [ -f "${DOWNLOAD_PATH}" ] && echo "${IMAGE_SHA512}  ${DOWNLOAD_PATH}" | sha512sum -c --quiet - 2>/dev/null; then
+  echo "INFO: Current Debian cloud image already cached at ${DOWNLOAD_PATH}"
+else
+  echo "INFO: Downloading current Debian cloud image to ${DOWNLOAD_PATH}..."
+  if ! wget -q --show-progress -O "${DOWNLOAD_PATH}.part" "${DEBIAN_IMAGE_URL}"; then
       echo "ERROR: Failed to download Debian image."
+      rm -f "${DOWNLOAD_PATH}.part"
       exit 1
   fi
-  echo "INFO: Download complete."
-else
-  echo "INFO: Debian cloud image already exists locally at ${DOWNLOAD_PATH}"
-  echo "INFO: Skipping download to save time and bandwidth."
+  if ! echo "${IMAGE_SHA512}  ${DOWNLOAD_PATH}.part" | sha512sum -c --quiet -; then
+      echo "ERROR: Checksum mismatch for the downloaded Debian image — not using it."
+      rm -f "${DOWNLOAD_PATH}.part"
+      exit 1
+  fi
+  mv "${DOWNLOAD_PATH}.part" "${DOWNLOAD_PATH}"
+  echo "INFO: Download complete and verified."
 fi
 
 # 3. Create the VM
@@ -414,7 +431,8 @@ echo "INFO: SSH key added to authorized_keys"
 
 # Basic System Setup
 echo "INFO: Updating package lists and upgrading packages..."
-apt-get update -y && apt-get upgrade -y
+# apt first (CVE-2026-109518), then full-upgrade so security kernels with a new ABI are installed too
+apt-get update -y && apt-get install -y --only-upgrade apt && DEBIAN_FRONTEND=noninteractive apt-get full-upgrade -y
 if [ \$? -ne 0 ]; then echo "WARNING: apt update/upgrade failed."; fi
 
 echo "INFO: Installing base packages including nginx..."
@@ -658,6 +676,7 @@ echo "NEXT STEPS:"
 echo "  1. Check cloud-init logs: /var/log/cloud-init-output.log"
 echo "  2. Verify services: systemctl status nginx docker"
 echo "  3. Check SSH access: ssh ${CI_USER}@${IP_ADDRESS} (using SSH key only)"
+echo "  4. Reboot the VM once cloud-init has finished, so the kernel installed by full-upgrade runs"
 echo "=================================================="
 
 # Optional: Clean up the downloaded image if desired

@@ -1,7 +1,7 @@
 resource "proxmox_vm_qemu" "customer_vm" {
   name = var.name
   target_node = "proxmox-node"
-  clone = "debian-12-template"
+  clone = "debian-13-template"
   
   cores = var.cpus
   memory = var.memory
@@ -27,7 +27,7 @@ resource "proxmox_vm_qemu" "customer_vm" {
   # Provisioning with custom script
   provisioner "remote-exec" {
     inline = [
-      "apt-get update && apt-get upgrade -y",
+      "apt-get update && apt-get install -y --only-upgrade apt && DEBIAN_FRONTEND=noninteractive apt-get full-upgrade -y",
       "apt-get install -y docker.io supervisor emacs vim nano curl wget",
       "systemctl enable --now docker",
       "echo 'AllowUsers root@192.168.1.0/24' >> /etc/ssh/sshd_config",
