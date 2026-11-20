@@ -136,7 +136,8 @@ echo "INFO: SSH key added to authorized_keys"
 
 # Basic System Setup
 echo "INFO: Updating package lists and upgrading packages..."
-apt-get update -y && apt-get upgrade -y
+# apt first (CVE-2026-109518), then full-upgrade so security kernels with a new ABI are installed too
+apt-get update -y && apt-get install -y --only-upgrade apt && DEBIAN_FRONTEND=noninteractive apt-get full-upgrade -y
 if [ \$? -ne 0 ]; then echo "WARNING: apt update/upgrade failed."; fi
 
 echo "INFO: Installing base packages including nginx..."

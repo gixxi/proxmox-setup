@@ -18,8 +18,8 @@ provider "proxmox" {
 resource "null_resource" "cloud_image_check" {
   provisioner "local-exec" {
     command = <<-EOT
-      if ! ssh proxmox-server pveam list local | grep -q "debian-12-generic-amd64"; then
-        ssh proxmox-server pveam download local debian-12-generic-amd64.qcow2
+      if ! ssh proxmox-server pveam list local | grep -q "debian-13-generic-amd64"; then
+        ssh proxmox-server pveam download local debian-13-generic-amd64.qcow2
       fi
     EOT
   }

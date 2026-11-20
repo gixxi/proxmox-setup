@@ -3,7 +3,8 @@ Setting up proxmox on bare metal. Describes preliminary actions, setting up the 
 
 ## Target audience and version
 
-This guide is for guide for Setting up Proxmox VE 8.3.5 on bare metal.
+This guide is for setting up Proxmox VE 9 (Debian 13 "trixie") on bare metal. Nodes still on
+Proxmox VE 8 are end of life — see [Upgrading a Proxmox VE 8 node](#3-upgrading-a-proxmox-ve-8-node).
 
 # Preliminary actions
 
@@ -61,54 +62,126 @@ Make sure to use a ashift value of as per the block size of the storage device, 
 
 # First steps on the Proxmox VE
 
-1. Disable enterprise subscription check
+## 1. Package repositories
 
-In the proxmox web interface, go to your node and the click on Updates->Repositories.
+Proxmox VE 9 uses the deb822 format (`/etc/apt/sources.list.d/*.sources`). Rules for every node:
 
-Disable the following repositories:
+- **Debian and Debian security over https.** CVE-2026-109518 (APT, 2026-11) lets an attacker in the
+  network path swap a package during `apt-get update` and run code as root on an unpatched apt; https
+  closes that path. `ftp.ch.debian.org` does not serve https — use `deb.debian.org`.
+- **Proxmox enterprise repositories** (`enterprise.proxmox.com`) are https-only. Use them on nodes
+  with a subscription.
+- **Proxmox no-subscription repositories** (`download.proxmox.com`) have **no valid https**: IPv4
+  presents a certificate for another name, IPv6 has no port 443. Keep them on `http://` — the
+  packages are signed with the Proxmox key, which protects them once apt is patched (Debian 13: apt
+  ≥ 3.0.4, Debian 12: apt ≥ 2.6.2).
+- **Ceph** on PVE 9 is Squid (`ceph-squid`, suite `trixie`). PVE 9 ships the Ceph client
+  (`ceph-common`, `ceph-fuse`) even without a Ceph cluster, so configure the matching repository
+  anyway; a leftover `ceph-quincy bookworm` entry from PVE 8 must go.
+- One entry per repository. Old `*.list` files next to the `*.sources` files produce
+  "configured multiple times" warnings; move them out of `sources.list.d/`.
 
-- enterprise.proxmox.com/debian/pve
-- enterprise.proxmox.com/debian/ceph-quincy
-Now head Updates and click *Refesh* in the toolbar.
-
-**Bash version**
-
+**Bash version** — run as root on a fresh node:
 
 ```bash
-echo "Getting rid of the the enterprise repositories"
-cd /etc/apt/
-cp sources.list sources.list.bak
-echo "deb http://ftp.ch.debian.org/debian bookworm main contrib
+mkdir -p /root/apt-old && cp -a /etc/apt /root/apt-old/apt-$(date +%F)
+# PVE 8 leftovers and old one-line Debian/Proxmox/Ceph entries (third-party lists such as Docker stay)
+for f in pve-enterprise.list pve-no-subscription.list pve-install-repo.list ceph.list ceph.list.off ceph.list.bak; do
+  [ -e "/etc/apt/sources.list.d/$f" ] && mv "/etc/apt/sources.list.d/$f" /root/apt-old/
+done
+: > /etc/apt/sources.list
 
-deb http://ftp.ch.debian.org/debian bookworm-updates main contrib
+cat > /etc/apt/sources.list.d/debian.sources <<'SRC'
+Types: deb
+URIs: https://deb.debian.org/debian
+Suites: trixie trixie-updates
+Components: main contrib non-free-firmware
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
 
-# security updates
-deb http://security.debian.org bookworm-security main contrib
-
-deb http://download.proxmox.com/debian/pve bookworm pve-no-subscription" > sources.list
-
-chmod 644 sources.list
-
-echo "Getting rid of the enterprise ceph repositories"
-cd /etc/apt/sources.list.d
-cp ceph.list ceph.list.bak
-echo "# deb https://enterprise.proxmox.com/debian/ceph-quincy bookworm enterprise
-
-deb http://download.proxmox.com/debian/ceph-quincy bookworm no-subscription
-" > ceph.list
-chmod 644 ceph.list
-
-cp pve-enterprise.list pve-enterprise.list.bak
-
-echo "# deb https://enterprise.proxmox.com/debian/pve bookworm pve-enterprise
-" > pve-enterprise.list
-chmod 644 pve-enterprise.list
-
-apt-get update
-apt-get upgrade
-
-
+Types: deb
+URIs: https://security.debian.org/debian-security
+Suites: trixie-security
+Components: main contrib non-free-firmware
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+SRC
 ```
+
+Then **either** — node **with** subscription (enterprise):
+
+```bash
+pvesubscription get | grep -i status     # must be "active", otherwise apt-get update fails with 401
+cat > /etc/apt/sources.list.d/pve-enterprise.sources <<'SRC'
+Types: deb
+URIs: https://enterprise.proxmox.com/debian/pve
+Suites: trixie
+Components: pve-enterprise
+Signed-By: /usr/share/keyrings/proxmox-archive-keyring.gpg
+SRC
+cat > /etc/apt/sources.list.d/ceph.sources <<'SRC'
+Types: deb
+URIs: https://enterprise.proxmox.com/debian/ceph-squid
+Suites: trixie
+Components: enterprise
+Signed-By: /usr/share/keyrings/proxmox-archive-keyring.gpg
+SRC
+```
+
+**or** — node **without** subscription (no-subscription):
+
+```bash
+cat > /etc/apt/sources.list.d/pve-enterprise.sources <<'SRC'
+Types: deb
+URIs: https://enterprise.proxmox.com/debian/pve
+Suites: trixie
+Components: pve-enterprise
+Signed-By: /usr/share/keyrings/proxmox-archive-keyring.gpg
+Enabled: no
+SRC
+cat > /etc/apt/sources.list.d/proxmox.sources <<'SRC'
+Types: deb
+URIs: http://download.proxmox.com/debian/pve
+Suites: trixie
+Components: pve-no-subscription
+Signed-By: /usr/share/keyrings/proxmox-archive-keyring.gpg
+SRC
+cat > /etc/apt/sources.list.d/ceph.sources <<'SRC'
+Types: deb
+URIs: http://download.proxmox.com/debian/ceph-squid
+Suites: trixie
+Components: no-subscription
+Signed-By: /usr/share/keyrings/proxmox-archive-keyring.gpg
+SRC
+```
+
+Check and update — apt itself first:
+
+```bash
+chmod 644 /etc/apt/sources.list.d/*.sources
+apt-get update 2>&1 | grep -E '^(Hit|Get|Err|W:|E:|Warning)'   # no Err, no "configured multiple times"
+apt-get install --only-upgrade apt
+apt policy apt | head -3                                         # Installed: >= 3.0.4
+apt-get dist-upgrade                                             # on PVE never plain "apt upgrade"
+```
+
+## 2. Keeping a node patched
+
+- Update with `apt-get dist-upgrade` (or *Node → Updates → Upgrade*). Kernel fixes only take effect
+  after a **reboot**: migrate or shut down the guests (`qm list`, `pct list`), `reboot`, then check
+  `uname -r`, `pveversion` and that the guests are back.
+- PVE runs the Proxmox kernel (`proxmox-kernel-*`), not Debian's. Compare it with the Proxmox
+  security advisories (PSA), not with Debian's DSA versions. Example: CVE-2026-98432 is fixed in
+  `proxmox-kernel-7.0.14-25-pve` and later (PSA-2026-00080-1).
+- Remove old kernels only after the new one has booted: `apt autoremove --purge`, then
+  `proxmox-boot-tool kernel list` must still show the running kernel plus one fallback.
+- Every node runs the Rocklog firewall, profile `proxmox`:
+  `2_infrastructure/setup_firewall.sh proxmox --install` (see `2_infrastructure/README.md`).
+
+## 3. Upgrading a Proxmox VE 8 node
+
+Proxmox VE 8 (Debian 12) reached end of life on 2026-08-31 and gets no Proxmox kernel or QEMU fixes
+any more. Upgrade in place following the official *Upgrade from 8 to 9* guide: run `pve8to9 --full`
+until it reports no failures, upgrade an existing Ceph cluster to Squid **before** the PVE step, then
+switch the repositories as in section 1 (suite `trixie`).
 
 # 2. Hardening the Proxmox VE
 
