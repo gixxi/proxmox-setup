@@ -139,9 +139,15 @@ GATEWAY="${GATEWAY_ENV:-$GATEWAY}"    # Allow environment override
 
 # Debian 13 (trixie) generic cloud image. "latest" is the newest build; the local copy is named after
 # its SHA512 so a newer build is downloaded automatically and a stale or corrupt copy is never reused.
-# Override DEBIAN_IMAGE_BASE to pin a specific build directory (e.g. .../trixie/<yyyymmdd-nnnn>).
-DEBIAN_IMAGE_BASE="${DEBIAN_IMAGE_BASE:-https://cloud.debian.org/images/cloud/trixie/latest}"
-DEBIAN_IMAGE_FILE="debian-13-generic-amd64.qcow2"
+# Set DEBIAN_IMAGE_BUILD=<yyyymmdd-nnnn> to pin a specific build; dated build directories name the
+# file debian-13-generic-amd64-<build>.qcow2, so both the directory and the file name change.
+if [ -n "${DEBIAN_IMAGE_BUILD:-}" ]; then
+  DEBIAN_IMAGE_BASE="${DEBIAN_IMAGE_BASE:-https://cloud.debian.org/images/cloud/trixie/${DEBIAN_IMAGE_BUILD}}"
+  DEBIAN_IMAGE_FILE="debian-13-generic-amd64-${DEBIAN_IMAGE_BUILD}.qcow2"
+else
+  DEBIAN_IMAGE_BASE="${DEBIAN_IMAGE_BASE:-https://cloud.debian.org/images/cloud/trixie/latest}"
+  DEBIAN_IMAGE_FILE="debian-13-generic-amd64.qcow2"
+fi
 DEBIAN_IMAGE_URL="${DEBIAN_IMAGE_BASE}/${DEBIAN_IMAGE_FILE}"
 IMAGE_CACHE_DIR="${IMAGE_CACHE_DIR:-/var/lib/vz/template/cloud-images}"
 # IMAGE_NAME and DOWNLOAD_PATH are set in step 2 once the checksum is known
